@@ -3,6 +3,9 @@
 #include "Renderer2D.h"
 #include "InputManager.h"
 #include "ResourceManager.h"
+#include "GameLoop.h"
+#include "SceneState.h"
+#include "EditorState.h"
 
 class Engine {
 private:
@@ -10,6 +13,9 @@ private:
     Renderer2D renderer2D;
     InputManager inputManager;
     ResourceManager resourceManager;
+    SceneState sceneState;
+    EditorState editorState;
+	GameLoop gameLoop;
     bool running;
 
 public:

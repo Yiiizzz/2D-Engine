@@ -1,5 +1,7 @@
 #pragma once
 #include <SDL3/SDL.h>
+#include "SceneState.h"
+#include "ResourceManager.h"
 
 class Renderer2D {
 private:
@@ -10,6 +12,7 @@ public:
     bool init(SDL_Window* window);
     void clear();
     void drawTexture(SDL_Texture* texture);
+    void renderScene(const SceneState& sceneState, ResourceManager& resourceManager);
     void present();
     void destroy();
     SDL_Renderer* getRenderer() const;

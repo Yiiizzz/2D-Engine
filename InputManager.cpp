@@ -1,6 +1,7 @@
 #include "InputManager.h"
 #include "WindowManager.h"
 #include <iostream>
+#include <backends/imgui_impl_sdl3.h>
 
 InputManager::InputManager() : quitRequested(false) {}
 
@@ -8,6 +9,8 @@ void InputManager::processEvents(WindowManager& windowManager) {
     SDL_Event event;
 
     while (SDL_PollEvent(&event)) {
+        ImGui_ImplSDL3_ProcessEvent(&event);
+
         switch (event.type) {
         case SDL_EVENT_QUIT:
             quitRequested = true;
@@ -33,32 +36,6 @@ void InputManager::processEvents(WindowManager& windowManager) {
                 windowManager.resize(1280, 720);
                 std::cout << "Window resized to 1280x720" << std::endl;
             }
-            break;
-
-        case SDL_EVENT_WINDOW_RESIZED:
-            std::cout << "Window resized event: "
-                << event.window.data1 << " x "
-                << event.window.data2 << std::endl;
-            break;
-
-        case SDL_EVENT_WINDOW_MINIMIZED:
-            std::cout << "Window minimized" << std::endl;
-            break;
-
-        case SDL_EVENT_WINDOW_MAXIMIZED:
-            std::cout << "Window maximized" << std::endl;
-            break;
-
-        case SDL_EVENT_WINDOW_RESTORED:
-            std::cout << "Window restored" << std::endl;
-            break;
-
-        case SDL_EVENT_WINDOW_FOCUS_GAINED:
-            std::cout << "Window focus gained" << std::endl;
-            break;
-
-        case SDL_EVENT_WINDOW_FOCUS_LOST:
-            std::cout << "Window focus lost" << std::endl;
             break;
         }
     }

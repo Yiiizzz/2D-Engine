@@ -20,6 +20,21 @@ void Renderer2D::drawTexture(SDL_Texture* texture) {
     SDL_RenderTexture(renderer, texture, nullptr, nullptr);
 }
 
+void Renderer2D::renderScene(const SceneState& sceneState, ResourceManager& resourceManager) {
+    SDL_Texture* texture = resourceManager.getTexture();
+    if (!texture) return;
+
+    for (const auto& obj : sceneState.objects) {
+        SDL_FRect dst;
+        dst.x = obj.position[0];
+        dst.y = obj.position[1];
+        dst.w = 64.0f * obj.scale[0];
+        dst.h = 64.0f * obj.scale[1];
+
+        SDL_RenderTexture(renderer, texture, nullptr, &dst);
+    }
+}
+
 void Renderer2D::present() {
     SDL_RenderPresent(renderer);
 }

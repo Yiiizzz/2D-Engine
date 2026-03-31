@@ -61,22 +61,30 @@
 
 ```text
 2D-Engine/
-├─ asset/                  # 项目资源
-├─ external/               # 第三方依赖源码（SDL / SDL_image / ImGui）
-├─ include/                # 预留公共头文件目录
-├─ src/
-│  └─ editor/              # 编辑器 UI 与面板原型
-├─ main.cpp                # 程序入口
-├─ Engine.*                # 引擎总控
-├─ WindowManager.*         # 窗口管理
-├─ Renderer2D.*            # 2D 渲染
-├─ InputManager.*          # 输入管理
-├─ ResourceManager.*       # 资源管理
-├─ GameLoop.*              # 游戏循环
-├─ SceneState.h            # 场景数据
-├─ EditorState.h           # 编辑器状态
-├─ TextureManager.*        # 预留模块
-└─ Sprite.*                # 预留模块
+├─ asset/                 # 全局资源（图片、音效等）
+├─ backend/               # 后端逻辑
+│   ├─ core/              # 核心引擎
+│   │   ├─ Engine.cpp/h       # 引擎总控
+│   │   ├─ GameLoop.cpp/h     # 游戏/引擎循环
+│   │   └─ SceneState.h       # 场景数据
+│   ├─ input/             # 输入模块
+│   │   └─ InputManager.cpp/h # 键盘/鼠标事件处理
+│   ├─ render/            # 渲染模块
+│   │   └─ Renderer2D.cpp/h  # 2D 渲染
+│   ├─ resource/          # 资源管理
+│   │   ├─ ResourceManager.cpp/h
+│   │   ├─ TextureManager.cpp/h
+│   │   └─ Sprite.cpp/h
+│   └─ window/            # 窗口管理
+│       └─ WindowManager.cpp/h
+├─ external/              # 第三方库（SDL / SDL_image / ImGui）
+├─ frontend/              # 前端 UI
+│   ├─ editor/           # 编辑器面板模块
+│   └─ EditorState.h     # 前端状态
+├─ include/               # 公共头文件
+├─ main.cpp               # 程序入口，初始化前后端并连接接口
+├─ CMakeLists.txt
+└─ CMakePresets.json
 ```
 
 ## 环境配置

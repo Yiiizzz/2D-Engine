@@ -29,37 +29,44 @@ include_directories(
 
 # 可执行程序
 add_executable(SDLTest
+    # 主文件
     main.cpp
-    Engine.cpp
-    WindowManager.cpp
-    Renderer2D.cpp
-    TextureManager.cpp
-    InputManager.cpp
-    GameLoop.cpp
-    ResourceManager.cpp
-    Sprite.cpp
-    
-    src/editor/EditorUI.cpp
-    src/editor/Panels/ScenePanel.cpp
-    src/editor/Panels/AssetPanel.cpp
 
-    # ImGui core
-    
-    
-    
-    
+    # backend 文件夹（你最新的路径）
+    backend/core/Engine.cpp
+    backend/window/WindowManager.cpp
+    backend/render/Renderer2D.cpp
+    backend/resource/TextureManager.cpp
+    backend/input/InputManager.cpp
+    backend/core/GameLoop.cpp
+    backend/resource/ResourceManager.cpp
+    backend/resource/Sprite.cpp
 
-    # SDL3 backend
-    
-    
-          "external/imgui/imgui.cpp" "external/imgui/imgui_demo.cpp" "external/imgui/imgui_draw.cpp" "external/imgui/imgui_tables.cpp" "external/imgui/imgui_widgets.cpp" "external/imgui/imgui.h" "external/imgui/imgui_internal.h" "external/imgui/backends/imgui_impl_sdl3.cpp" "external/imgui/backends/imgui_impl_sdl3.h" "external/imgui/backends/imgui_impl_sdlrenderer3.cpp" "external/imgui/backends/imgui_impl_sdlrenderer3.h" "external/imgui/imconfig.h"  "SceneState.h" "EditorState.h")
+    # frontend 编辑器
+    frontend/src/editor/EditorUI.cpp
+    frontend/src/editor/Panels/ScenePanel.cpp
+    frontend/src/editor/Panels/AssetPanel.cpp
+    frontend/src/editor/Panels/HierarchyPanel.cpp 
+    frontend/src/editor/Panels/InspectorPanel.cpp 
+
+    # ImGui 核心 【正确写法：一行一个，不要引号！】
+    external/imgui/imgui.cpp
+    external/imgui/imgui_demo.cpp
+    external/imgui/imgui_draw.cpp
+    external/imgui/imgui_tables.cpp
+    external/imgui/imgui_widgets.cpp
+
+
+    # ImGui SDL3 后端
+    external/imgui/backends/imgui_impl_sdl3.cpp
+    external/imgui/backends/imgui_impl_sdlrenderer3.cpp
+ "frontend/src/editor/Panels/ConsolePanel.h" "frontend/src/editor/Panels/ConsolePanel.cpp")
 
 # 链接库
 target_link_libraries(SDLTest PRIVATE
     SDL3::SDL3
     SDL3_image::SDL3_image
 )
-
 # 复制 asset 文件夹到 exe 目录
 add_custom_command(TARGET SDLTest POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory

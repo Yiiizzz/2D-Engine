@@ -1,11 +1,11 @@
 #pragma once
-#include "WindowManager.h"
-#include "Renderer2D.h"
-#include "InputManager.h"
-#include "ResourceManager.h"
-#include "GameLoop.h"
-#include "SceneState.h"
-#include "EditorState.h"
+#include "../window/WindowManager.h"
+#include "../render/Renderer2D.h"
+#include "../input/InputManager.h"
+#include "../resource/ResourceManager.h"
+#include "../core/GameLoop.h"
+#include "../core/SceneState.h"
+#include "../../frontend/src/EditorState.h"
 
 class Engine {
 private:
@@ -17,10 +17,13 @@ private:
     EditorState editorState;
 	GameLoop gameLoop;
     bool running;
+    SceneState playModeSceneBackup;
+    bool hasPlayModeBackup = false;
 
 public:
     Engine();
     bool init();
     void run();
     void shutdown();
+    void handleEditorCommands();
 };

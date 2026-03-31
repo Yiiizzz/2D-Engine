@@ -7,6 +7,7 @@
 #include "Panels/ScenePanel.h"
 #include "Panels/InspectorPanel.h"
 #include "Panels/AssetPanel.h"
+#include "Panels/ConsolePanel.h"
 #include <cstdio>
 
 
@@ -40,15 +41,15 @@ void DrawToolbarContent(EditorState& editorState)
     ImGui::SetCursorPosX((width - totalWidth) * 0.5f);
 
     if (ImGui::Button("Play", ImVec2(buttonWidth, 0)))
-        editorState.mode = EditorMode::Play;
+        editorState.pendingCommand = EditorCommand::Play;
 
     ImGui::SameLine();
     if (ImGui::Button("Pause", ImVec2(buttonWidth, 0)))
-        editorState.mode = EditorMode::Pause;
+        editorState.pendingCommand = EditorCommand::Pause;
 
     ImGui::SameLine();
     if (ImGui::Button("Stop", ImVec2(buttonWidth, 0)))
-        editorState.mode = EditorMode::Edit;
+        editorState.pendingCommand = EditorCommand::Stop;
 
     ImGui::SameLine();
     ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
@@ -59,99 +60,6 @@ void DrawToolbarContent(EditorState& editorState)
     else if (editorState.mode == EditorMode::Pause) modeText = "Pause";
 
     ImGui::Text("Mode: %s", modeText);
-}
-
-// ================= Panels =================
-void DrawHierarchy(SceneState& sceneState, EditorState& editorState)
-{
-    ImGui::Begin("Hierarchy");
-
-    for (int i = 0; i < sceneState.objects.size(); ++i) {
-        bool selected = (editorState.selectedObjectIndex == i);
-        if (ImGui::Selectable(sceneState.objects[i].name.c_str(), selected)) {
-            editorState.selectedObjectIndex = i;
-        }
-    }
-
-    ImGui::End();
-}
-
-void DrawScene(SceneState& sceneState, EditorState& editorState)
-{
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 8));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0);
-
-    ImGui::Begin("Scene");
-
-    const char* modeText = "Edit";
-    if (editorState.mode == EditorMode::Play) modeText = "Play";
-    else if (editorState.mode == EditorMode::Pause) modeText = "Pause";
-
-    ImGui::Text("Scene Debug View");
-    ImGui::Separator();
-    ImGui::Text("Mode: %s", modeText);
-    ImGui::Text("Object count: %d", (int)sceneState.objects.size());
-
-    int index = editorState.selectedObjectIndex;
-    if (index >= 0 && index < sceneState.objects.size()) {
-        auto& obj = sceneState.objects[index];
-        ImGui::Separator();
-        ImGui::Text("Selected Object");
-        ImGui::Text("Name: %s", obj.name.c_str());
-        ImGui::Text("ID: %d", obj.id);
-        ImGui::Text("Position: %.1f, %.1f", obj.position[0], obj.position[1]);
-        ImGui::Text("Scale: %.1f, %.1f", obj.scale[0], obj.scale[1]);
-    }
-    else {
-        ImGui::Separator();
-        ImGui::Text("No object selected");
-    }
-
-    ImGui::End();
-
-    ImGui::PopStyleVar(2);
-}
-
-void DrawInspector(SceneState& sceneState, EditorState& editorState)
-{
-    ImGui::Begin("Inspector");
-
-    int index = editorState.selectedObjectIndex;
-    if (index >= 0 && index < sceneState.objects.size()) {
-        auto& obj = sceneState.objects[index];
-
-        ImGui::Text("Selected Object");
-        ImGui::Separator();
-        ImGui::Text("Name: %s", obj.name.c_str());
-        ImGui::Text("ID: %d", obj.id);
-
-        ImGui::InputFloat2("Position", obj.position);
-        ImGui::InputFloat2("Scale", obj.scale);
-    }
-    else {
-        ImGui::Text("No object selected");
-    }
-
-    ImGui::End();
-}
-
-void DrawProject()
-{
-    ImGui::Begin("Project");
-    ImGui::Text("Assets:");
-    ImGui::BulletText("Texture.png");
-    ImGui::BulletText("Sprite.png");
-    ImGui::BulletText("Background.jpg");
-    ImGui::End();
-}
-
-void DrawConsole()
-{
-    ImGui::Begin("Console");
-    ImGui::Text("Log Output:");
-    ImGui::Text("[INFO] Engine initialized...");
-    ImGui::Text("[DEBUG] Object loaded");
-    ImGui::End();
 }
 
 // ================= 主界面 =================
@@ -229,9 +137,9 @@ void DrawEditorUI(SceneState& sceneState, EditorState& editorState)
     ImGui::PopStyleVar();
 
     // ===== Panels =====
-    DrawHierarchy(sceneState,editorState);
-    DrawScene(sceneState, editorState);
-    DrawInspector(sceneState, editorState);
-    DrawProject();
-    DrawConsole();
+    DrawHierarchyPanel(sceneState, editorState);
+    DrawScenePanel(sceneState, editorState);
+    DrawInspectorPanel(sceneState, editorState);
+    DrawAssetPanel();
+    DrawConsolePanel();
 }

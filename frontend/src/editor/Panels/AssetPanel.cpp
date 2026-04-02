@@ -1,7 +1,12 @@
 #include "AssetPanel.h"
-#include <iostream>
+#include "imgui.h"
 
 void DrawAssetPanel()
 {
-    std::cout << "Asset Panel\n";
+    ImGui::Begin("Project");
+    ImGui::Text("Assets:");
+    ImGui::BulletText("Texture.png");
+    ImGui::BulletText("Sprite.png");
+    ImGui::BulletText("Background.jpg");
+    ImGui::End();
 }

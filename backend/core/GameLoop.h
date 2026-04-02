@@ -1,6 +1,6 @@
 #pragma once
 #include "SceneState.h"
-#include "EditorState.h"
+#include "../../frontend/src/EditorState.h"
 
 class GameLoop {
 public:

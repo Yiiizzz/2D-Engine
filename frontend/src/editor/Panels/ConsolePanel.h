@@ -2,4 +2,4 @@
 #include "../../../backend/core/SceneState.h"
 #include "../../EditorState.h"
 
-void DrawHierarchyPanel(SceneState& sceneState, EditorState& editorState);
+void DrawConsolePanel();

@@ -1,5 +1,5 @@
 #include "InputManager.h"
-#include "WindowManager.h"
+#include "../window/WindowManager.h"
 #include <iostream>
 #include <backends/imgui_impl_sdl3.h>
 

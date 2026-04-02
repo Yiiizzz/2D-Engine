@@ -1,7 +1,16 @@
 #include "HierarchyPanel.h"
-#include <iostream>
+#include "imgui.h"
 
-void DrawHierarchyPanel()
+void DrawHierarchyPanel(SceneState& sceneState, EditorState& editorState)
 {
-    std::cout << "Hierarchy Panel\n";
+    ImGui::Begin("Hierarchy");
+
+    for (int i = 0; i < static_cast<int>(sceneState.objects.size()); ++i) {
+        bool selected = (editorState.selectedObjectIndex == i);
+        if (ImGui::Selectable(sceneState.objects[i].name.c_str(), selected)) {
+            editorState.selectedObjectIndex = i;
+        }
+    }
+
+    ImGui::End();
 }

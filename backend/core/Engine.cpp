@@ -1,6 +1,6 @@
 #include "Engine.h"
 #include <iostream>
-#include "editor/EditorUI.h"
+#include "frontend\src\editor\EditorUI.h"
 #include <SDL3/SDL.h>
 #include <imgui.h>
 #include <backends/imgui_impl_sdl3.h>

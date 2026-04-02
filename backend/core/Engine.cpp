@@ -1,6 +1,6 @@
 #include "Engine.h"
 #include <iostream>
-#include "editor/EditorUI.h"
+#include "../../frontend/src/editor/EditorUI.h"
 #include <SDL3/SDL.h>
 #include <imgui.h>
 #include <backends/imgui_impl_sdl3.h>
@@ -39,9 +39,53 @@ bool Engine::init() {
     running = true;
     return true;
 }
+void Engine::handleEditorCommands()
+{
+    if (editorState.pendingCommand != EditorCommand::None) {
+        std::cout << "[Engine] pendingCommand = "
+            << static_cast<int>(editorState.pendingCommand) << std::endl;
+    }
+
+    switch (editorState.pendingCommand) {
+    case EditorCommand::Play:
+        SDL_Log("[Engine] Play command received");
+        if (editorState.mode == EditorMode::Edit) {
+            std::cout << "[Engine] Backup saved" << std::endl;
+            playModeSceneBackup = sceneState;
+            hasPlayModeBackup = true;
+        }
+        editorState.mode = EditorMode::Play;
+        break;
+
+    case EditorCommand::Pause:
+        SDL_Log("[Engine] Pause command received");
+        if (editorState.mode == EditorMode::Play) {
+            editorState.mode = EditorMode::Pause;
+        }
+        else if (editorState.mode == EditorMode::Pause) {
+            editorState.mode = EditorMode::Play;
+        }
+        break;
+
+    case EditorCommand::Stop:
+        SDL_Log("[Engine] Stop command received");
+        if (hasPlayModeBackup) {
+            SDL_Log("[Engine] Restoring backup");
+            sceneState = playModeSceneBackup;
+            hasPlayModeBackup = false;
+        }
+        editorState.mode = EditorMode::Edit;
+        break;
+
+    case EditorCommand::None:
+    default:
+        break;
+    }
+
+    editorState.pendingCommand = EditorCommand::None;
+}
 
 void Engine::run() {
-    SDL_Event event;
     while (running) {
         // 1. 输入
         inputManager.processEvents(windowManager);
@@ -49,26 +93,29 @@ void Engine::run() {
             running = false;
         }
 
-        // 2. 逻辑
-        gameLoop.update(sceneState, editorState);
-
-        // 3. 开始 ImGui 帧
+        // 2. 开始 ImGui 帧
         ImGui_ImplSDL3_NewFrame();
         ImGui_ImplSDLRenderer3_NewFrame();
         ImGui::NewFrame();
 
-        // 4. 编辑器 UI
+        // 3. 编辑器 UI
         DrawEditorUI(sceneState, editorState);
 
-        // 5. 渲染场景
+        // 4. 处理编辑器命令（Play / Pause / Stop）
+        handleEditorCommands();
+
+        // 5. 逻辑更新
+        gameLoop.update(sceneState, editorState);
+
+        // 6. 渲染场景
         renderer2D.clear();
         renderer2D.renderScene(sceneState, resourceManager);
 
-        // 6. 渲染 ImGui
+        // 7. 渲染 ImGui
         ImGui::Render();
         ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), renderer2D.getRenderer());
 
-        // 7. 提交画面
+        // 8. 提交画面
         renderer2D.present();
     }
 }

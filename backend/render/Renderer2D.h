@@ -1,7 +1,7 @@
 #pragma once
 #include <SDL3/SDL.h>
-#include "SceneState.h"
-#include "ResourceManager.h"
+#include "../core/SceneState.h"
+#include "../resource/ResourceManager.h"
 
 class Renderer2D {
 private:

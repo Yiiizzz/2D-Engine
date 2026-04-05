@@ -34,8 +34,13 @@ bool Engine::init() {
     ImGui_ImplSDL3_InitForSDLRenderer(windowManager.getWindow(), renderer2D.getRenderer());
     ImGui_ImplSDLRenderer3_Init(renderer2D.getRenderer());
 
-    sceneState.objects.push_back({ 0, "Player", {100.0f, 100.0f}, {1.0f, 1.0f}, 0, "pillar.png" });
-    sceneState.objects.push_back({ 1, "Enemy", {300.0f, 200.0f}, {1.0f, 1.0f}, 0, "pillar.png" });
+    const AssetRecord* defaultTexture = editorState.assetRegistry.findByPath("pillar.png");
+    const std::uint64_t defaultTextureId = defaultTexture ? defaultTexture->id : 0;
+    const std::string defaultTexturePath =
+        defaultTexture && !defaultTexture->relativePath.empty() ? defaultTexture->relativePath : "pillar.png";
+    sceneState.objects.push_back({ 0, "Player", {100.0f, 100.0f}, {1.0f, 1.0f}, defaultTextureId, defaultTexturePath });
+    sceneState.objects.push_back({ 1, "Enemy", {300.0f, 200.0f}, {1.0f, 1.0f}, defaultTextureId, defaultTexturePath });
+    sceneState.objects.push_back({ 1, "Enemy", {300.0f, 200.0f}, {1.0f, 1.0f}, defaultTextureId, defaultTexturePath });
     editorState.selectedObjectIndex = 0;
     editorState.assetStatus = "Create or open a project to import and persist project assets";
     editorState.sceneFilePath.clear();
@@ -259,9 +264,7 @@ void Engine::run() {
         renderer2D.clear();
         DrawEditorUI(sceneState, editorState, renderer2D.getSceneRenderTarget());
 
-        handleEditorCommands();
-        handleProjectCommands();
-        syncProjectAssets();
+        // 5. 逻辑更新
         gameLoop.update(sceneState, editorState);
 
         renderer2D.resizeSceneRenderTarget(

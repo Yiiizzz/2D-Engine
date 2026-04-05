@@ -6,6 +6,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <vector>
 #include <system_error>
 
 namespace fs = std::filesystem;
@@ -53,6 +54,147 @@ bool WriteProjectFile(const fs::path& projectRoot, const std::string& projectNam
 
     file << data.dump(4);
     outError.clear();
+    return true;
+}
+
+std::string SanitizeName(std::string name) {
+    for (char& ch : name) {
+        const bool invalid =
+            ch == '<' || ch == '>' || ch == ':' || ch == '"' || ch == '/' ||
+            ch == '\\' || ch == '|' || ch == '?' || ch == '*';
+        if (invalid) {
+            ch = '_';
+        }
+    }
+
+    while (!name.empty() && (name.back() == '.' || name.back() == ' ')) {
+        name.pop_back();
+    }
+
+    return name;
+}
+
+fs::path BuildUniquePath(const fs::path& directory, const std::string& baseName, const std::string& extension) {
+    fs::path target = directory / ResourcePathUtils::Utf8ToPath(baseName + extension);
+    if (!fs::exists(target)) {
+        return target;
+    }
+
+    int suffix = 1;
+    while (true) {
+        fs::path candidate = directory / ResourcePathUtils::Utf8ToPath(baseName + "_" + std::to_string(suffix) + extension);
+        if (!fs::exists(candidate)) {
+            return candidate;
+        }
+        ++suffix;
+    }
+}
+
+bool WriteTextFile(const fs::path& targetPath, const std::string& content, std::string& outError) {
+    std::ofstream file(targetPath);
+    if (!file.is_open()) {
+        outError = "Failed to create file: " + Normalize(targetPath);
+        return false;
+    }
+    file << content;
+    outError.clear();
+    return true;
+}
+
+bool WriteBmpPlaceholder(const fs::path& targetPath, std::string& outError) {
+    const std::vector<unsigned char> bytes = {
+        0x42, 0x4D, 0x3A, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x36, 0x00, 0x00, 0x00, 0x28, 0x00,
+        0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00,
+        0x00, 0x00, 0x01, 0x00, 0x18, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x13, 0x0B,
+        0x00, 0x00, 0x13, 0x0B, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF,
+        0xFF, 0x00
+    };
+
+    std::ofstream file(targetPath, std::ios::binary);
+    if (!file.is_open()) {
+        outError = "Failed to create image file: " + Normalize(targetPath);
+        return false;
+    }
+
+    file.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    outError.clear();
+    return true;
+}
+
+bool WriteSilentWav(const fs::path& targetPath, std::string& outError) {
+    const std::vector<unsigned char> bytes = {
+        'R','I','F','F', 0x24,0x00,0x00,0x00, 'W','A','V','E',
+        'f','m','t',' ', 0x10,0x00,0x00,0x00, 0x01,0x00,0x01,0x00,
+        0x44,0xAC,0x00,0x00, 0x88,0x58,0x01,0x00, 0x02,0x00,0x10,0x00,
+        'd','a','t','a', 0x00,0x00,0x00,0x00
+    };
+
+    std::ofstream file(targetPath, std::ios::binary);
+    if (!file.is_open()) {
+        outError = "Failed to create audio file: " + Normalize(targetPath);
+        return false;
+    }
+
+    file.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    outError.clear();
+    return true;
+}
+
+bool WriteScriptTemplate(const fs::path& targetPath, const std::string& scriptName, std::string& outError) {
+    const std::string content =
+        "#include \"ScriptAPI.h\"\n\n"
+        "SCRIPT_EXPORT void OnStart(ScriptContext* ctx) {\n"
+        "    if (ctx == nullptr) {\n"
+        "        return;\n"
+        "    }\n"
+        "\n"
+        "    ctx->rotation = 0.0f;\n"
+        "}\n\n"
+        "SCRIPT_EXPORT void OnUpdate(ScriptContext* ctx) {\n"
+        "    if (ctx == nullptr) {\n"
+        "        return;\n"
+        "    }\n"
+        "\n"
+        "    ctx->positionX += 60.0f * ctx->deltaTime;\n"
+        "    ctx->rotation += 90.0f * ctx->deltaTime;\n"
+        "}\n";
+
+    return WriteTextFile(targetPath, content, outError);
+}
+
+bool EnsureDirectory(const fs::path& path, std::string& outError) {
+    std::error_code ec;
+    fs::create_directories(path, ec);
+    if (ec) {
+        outError = "Failed to create directory: " + Normalize(path);
+        return false;
+    }
+    return true;
+}
+
+bool IsPathWithinRoot(const fs::path& root, const fs::path& target) {
+    std::error_code ec;
+    const fs::path normalizedRoot = fs::weakly_canonical(root, ec);
+    if (ec) {
+        return false;
+    }
+
+    const fs::path normalizedTarget = fs::weakly_canonical(target, ec);
+    if (ec) {
+        return false;
+    }
+
+    auto rootIt = normalizedRoot.begin();
+    auto targetIt = normalizedTarget.begin();
+    for (; rootIt != normalizedRoot.end(); ++rootIt, ++targetIt) {
+        if (targetIt == normalizedTarget.end() || *rootIt != *targetIt) {
+            return false;
+        }
+    }
+
     return true;
 }
 
@@ -126,6 +268,204 @@ bool LoadProject(const std::string& projectDirectory, ProjectDescriptor& outProj
     }
 
     return BuildProjectDescriptor(projectRoot, outProject, outError);
+}
+
+bool CreateProjectItem(const ProjectDescriptor& project, ProjectItemType type, const std::string& itemName, std::string& outCreatedPath, std::string& outError) {
+    const std::string sanitizedName = SanitizeName(itemName.empty() ? "NewItem" : itemName);
+    if (sanitizedName.empty()) {
+        outError = "Item name cannot be empty.";
+        return false;
+    }
+
+    fs::path targetDirectory;
+    std::string extension;
+    bool wroteFile = false;
+
+    switch (type) {
+    case ProjectItemType::Audio:
+        targetDirectory = ResourcePathUtils::Utf8ToPath(project.assetRootPath) / "Audio";
+        extension = ".wav";
+        break;
+    case ProjectItemType::Image:
+        targetDirectory = ResourcePathUtils::Utf8ToPath(project.assetRootPath) / "Images";
+        extension = ".bmp";
+        break;
+    case ProjectItemType::Text:
+        targetDirectory = ResourcePathUtils::Utf8ToPath(project.assetRootPath) / "Text";
+        extension = ".txt";
+        break;
+    case ProjectItemType::Scene:
+        targetDirectory = ResourcePathUtils::Utf8ToPath(project.assetRootPath) / "Scenes";
+        extension = ".scene.json";
+        break;
+    case ProjectItemType::Script:
+        targetDirectory = ResourcePathUtils::Utf8ToPath(project.assetRootPath) / "Scripts";
+        extension = ".cpp";
+        break;
+    }
+
+    if (!EnsureDirectory(targetDirectory, outError)) {
+        return false;
+    }
+
+    const fs::path targetPath = BuildUniquePath(targetDirectory, sanitizedName, extension);
+    switch (type) {
+    case ProjectItemType::Audio:
+        wroteFile = WriteSilentWav(targetPath, outError);
+        break;
+    case ProjectItemType::Image:
+        wroteFile = WriteBmpPlaceholder(targetPath, outError);
+        break;
+    case ProjectItemType::Text:
+        wroteFile = WriteTextFile(targetPath, "New text asset\n", outError);
+        break;
+    case ProjectItemType::Scene:
+        wroteFile = WriteTextFile(targetPath, "{\n    \"sceneName\": \"" + sanitizedName + "\",\n    \"objects\": []\n}\n", outError);
+        break;
+    case ProjectItemType::Script:
+        wroteFile = WriteScriptTemplate(targetPath, sanitizedName, outError);
+        break;
+    }
+
+    if (!wroteFile) {
+        return false;
+    }
+
+    outCreatedPath = Normalize(targetPath);
+    outError.clear();
+    return true;
+}
+
+bool CreateProjectItemInDirectory(const ProjectDescriptor& project, const std::string& targetDirectory, ProjectItemType type, const std::string& itemName, std::string& outCreatedPath, std::string& outError) {
+    const fs::path directory = ResourcePathUtils::Utf8ToPath(targetDirectory);
+    if (!IsPathWithinRoot(ResourcePathUtils::Utf8ToPath(project.rootPath), directory)) {
+        outError = "Target directory is outside the project.";
+        return false;
+    }
+
+    if (!EnsureDirectory(directory, outError)) {
+        return false;
+    }
+
+    const std::string sanitizedName = SanitizeName(itemName.empty() ? "NewItem" : itemName);
+    if (sanitizedName.empty()) {
+        outError = "Item name cannot be empty.";
+        return false;
+    }
+
+    std::string extension;
+    switch (type) {
+    case ProjectItemType::Audio: extension = ".wav"; break;
+    case ProjectItemType::Image: extension = ".bmp"; break;
+    case ProjectItemType::Text: extension = ".txt"; break;
+    case ProjectItemType::Scene: extension = ".scene.json"; break;
+    case ProjectItemType::Script: extension = ".cpp"; break;
+    }
+
+    const fs::path targetPath = BuildUniquePath(directory, sanitizedName, extension);
+    switch (type) {
+    case ProjectItemType::Audio:
+        if (!WriteSilentWav(targetPath, outError)) return false;
+        break;
+    case ProjectItemType::Image:
+        if (!WriteBmpPlaceholder(targetPath, outError)) return false;
+        break;
+    case ProjectItemType::Text:
+        if (!WriteTextFile(targetPath, "New text asset\n", outError)) return false;
+        break;
+    case ProjectItemType::Scene:
+        if (!WriteTextFile(targetPath, "{\n    \"sceneName\": \"" + sanitizedName + "\",\n    \"objects\": []\n}\n", outError)) return false;
+        break;
+    case ProjectItemType::Script:
+        if (!WriteScriptTemplate(targetPath, sanitizedName, outError)) return false;
+        break;
+    }
+
+    outCreatedPath = Normalize(targetPath);
+    outError.clear();
+    return true;
+}
+
+bool DeleteProjectEntry(const ProjectDescriptor& project, const std::string& targetPath, std::string& outError) {
+    const fs::path target = ResourcePathUtils::Utf8ToPath(targetPath);
+    const fs::path root = ResourcePathUtils::Utf8ToPath(project.rootPath);
+    if (!IsPathWithinRoot(root, target)) {
+        outError = "Target path is outside the project.";
+        return false;
+    }
+
+    std::error_code ec;
+    if (!fs::exists(target, ec)) {
+        outError = "Target does not exist: " + Normalize(target);
+        return false;
+    }
+
+    if (fs::is_directory(target, ec)) {
+        fs::remove_all(target, ec);
+    } else {
+        fs::remove(target, ec);
+    }
+
+    if (ec) {
+        outError = "Failed to delete: " + Normalize(target);
+        return false;
+    }
+
+    outError.clear();
+    return true;
+}
+
+bool RenameProjectEntry(const ProjectDescriptor& project, const std::string& targetPath, const std::string& newName, std::string& outRenamedPath, std::string& outError) {
+    const fs::path target = ResourcePathUtils::Utf8ToPath(targetPath);
+    const fs::path root = ResourcePathUtils::Utf8ToPath(project.rootPath);
+    if (!IsPathWithinRoot(root, target)) {
+        outError = "Target path is outside the project.";
+        return false;
+    }
+
+    std::error_code ec;
+    if (!fs::exists(target, ec)) {
+        outError = "Target does not exist: " + Normalize(target);
+        return false;
+    }
+
+    const std::string sanitizedName = SanitizeName(newName);
+    if (sanitizedName.empty()) {
+        outError = "New name cannot be empty.";
+        return false;
+    }
+
+    fs::path renamedPath = target.parent_path();
+    if (fs::is_directory(target, ec)) {
+        renamedPath /= ResourcePathUtils::Utf8ToPath(sanitizedName);
+    } else {
+        const std::string filename = target.filename().string();
+        const bool isSceneFile = filename.size() >= 11 && filename.substr(filename.size() - 11) == ".scene.json";
+        if (isSceneFile) {
+            renamedPath /= ResourcePathUtils::Utf8ToPath(sanitizedName + ".scene.json");
+        } else {
+            renamedPath /= ResourcePathUtils::Utf8ToPath(sanitizedName + target.extension().string());
+        }
+    }
+
+    if (fs::exists(renamedPath, ec)) {
+        outError = "A file with that name already exists: " + Normalize(renamedPath);
+        return false;
+    }
+
+    fs::rename(target, renamedPath, ec);
+    if (ec) {
+        outError = "Failed to rename: " + Normalize(target);
+        return false;
+    }
+
+    outRenamedPath = Normalize(renamedPath);
+    outError.clear();
+    return true;
+}
+
+bool IsPathInsideProject(const ProjectDescriptor& project, const std::string& targetPath) {
+    return IsPathWithinRoot(ResourcePathUtils::Utf8ToPath(project.rootPath), ResourcePathUtils::Utf8ToPath(targetPath));
 }
 
 }

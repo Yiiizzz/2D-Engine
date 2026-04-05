@@ -38,6 +38,7 @@ struct EditorState {
     std::string assetManifestPath;
     std::string sceneFilePath;
     std::string projectStatus = "No project loaded";
+    std::string scriptStatus;
     std::string pendingProjectName;
     std::string pendingProjectDirectory;
 };

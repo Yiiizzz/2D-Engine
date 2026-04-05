@@ -7,7 +7,11 @@
 
 enum class AssetType {
     Unknown,
-    Texture
+    Texture,
+    Audio,
+    Text,
+    Scene,
+    Script
 };
 
 struct AssetRecord {
@@ -30,6 +34,8 @@ public:
     AssetRegistry();
 
     void clear();
+    void setProjectRoot(const std::string& folderPath);
+    const std::string& getProjectRoot() const;
     void setProjectAssetRoot(const std::string& folderPath);
     const std::string& getProjectAssetRoot() const;
 
@@ -66,5 +72,6 @@ private:
     std::unordered_map<std::uint64_t, std::size_t> idToIndex_;
     std::string lastImportedFolder_;
     std::string lastError_;
+    std::string projectRoot_;
     std::string projectAssetRoot_ = "asset/imported";
 };

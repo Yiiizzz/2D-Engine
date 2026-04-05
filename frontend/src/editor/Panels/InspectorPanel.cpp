@@ -28,6 +28,8 @@ void DrawInspectorPanel(SceneState& sceneState, EditorState& editorState)
         ImGui::TextWrapped("%d", obj.id);
         ImGui::TextDisabled("Texture Resource ID");
         ImGui::TextWrapped("%llu", static_cast<unsigned long long>(obj.textureResourceId));
+        ImGui::TextDisabled("Script Resource ID");
+        ImGui::TextWrapped("%llu", static_cast<unsigned long long>(obj.scriptResourceId));
         ImGui::Spacing();
 
         ImGui::TextUnformatted("Rendering");
@@ -40,12 +42,43 @@ void DrawInspectorPanel(SceneState& sceneState, EditorState& editorState)
 
         ImGui::TextWrapped("Bound Texture: %s", obj.texturePath.c_str());
         ImGui::Spacing();
+        ImGui::TextUnformatted("Script");
+        ImGui::TextDisabled("Bind a project C++ script to update this object while Play mode is active.");
+        ImGui::TextWrapped("Bound Script: %s", obj.scriptPath.empty() ? "None" : obj.scriptPath.c_str());
+        if (ImGui::BeginCombo("Script Asset", obj.scriptPath.empty() ? "None" : obj.scriptPath.c_str())) {
+            const bool noScriptSelected = obj.scriptPath.empty();
+            if (ImGui::Selectable("None", noScriptSelected)) {
+                obj.scriptResourceId = 0;
+                obj.scriptPath.clear();
+            }
+
+            for (const AssetRecord& asset : editorState.assetRegistry.getAssets()) {
+                if (asset.type != AssetType::Script) {
+                    continue;
+                }
+
+                const std::string label = asset.relativePath.empty() ? asset.name : asset.relativePath;
+                const bool selected = (obj.scriptResourceId == asset.id);
+                if (ImGui::Selectable(label.c_str(), selected)) {
+                    obj.scriptResourceId = asset.id;
+                    obj.scriptPath = asset.sourcePath;
+                }
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::Spacing();
         ImGui::TextUnformatted("Transform");
         ImGui::TextDisabled("Use Scene or Hierarchy selection to edit this object.");
         ImGui::TextDisabled("Position");
         ImGui::InputFloat2("##Position", obj.position);
         ImGui::TextDisabled("Scale");
         ImGui::InputFloat2("##Scale", obj.scale);
+        ImGui::TextDisabled("Rotation");
+        ImGui::InputFloat("##Rotation", &obj.rotation);
+        if (!editorState.scriptStatus.empty()) {
+            ImGui::Spacing();
+            ImGui::TextWrapped("Script Status: %s", editorState.scriptStatus.c_str());
+        }
     }
     else {
         ImGui::TextUnformatted("No object selected");

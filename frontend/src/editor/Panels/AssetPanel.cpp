@@ -32,6 +32,7 @@ struct BrowserState {
     std::string pendingCreateDirectory;
     std::string pendingDeletePath;
     std::string pendingRenamePath;
+    bool openDeletePopup = false;
     bool openRenamePopup = false;
     char createItemName[128] = "NewItem";
     int createItemTypeIndex = 1;
@@ -172,6 +173,21 @@ std::string RelativeToProject(const EditorState& editorState, const fs::path& pa
     return ec ? path.filename().generic_string() : relative.generic_string();
 }
 
+std::string RelativeDirectoryLabel(const EditorState& editorState, const std::string& path) {
+    if (path.empty() || editorState.projectRootPath.empty()) {
+        return {};
+    }
+
+    const std::string normalizedProjectRoot = NormalizePath(ResourcePathUtils::Utf8ToPath(editorState.projectRootPath));
+    const std::string normalizedPath = NormalizePath(ResourcePathUtils::Utf8ToPath(path));
+    if (normalizedPath == normalizedProjectRoot) {
+        return "Project Root";
+    }
+
+    const std::string relative = RelativeToProject(editorState, ResourcePathUtils::Utf8ToPath(path));
+    return relative.empty() ? "Project Root" : relative;
+}
+
 void ResetBrowserState(BrowserState& state, const EditorState& editorState) {
     state.projectRoot = editorState.projectRootPath;
     state.currentDirectory = editorState.projectRootPath;
@@ -182,6 +198,7 @@ void ResetBrowserState(BrowserState& state, const EditorState& editorState) {
     state.pendingCreateDirectory.clear();
     state.pendingDeletePath.clear();
     state.pendingRenamePath.clear();
+    state.openDeletePopup = false;
     state.openRenamePopup = false;
     std::strcpy(state.createItemName, "NewItem");
     state.createItemTypeIndex = 1;
@@ -213,6 +230,62 @@ bool SaveTextFile(const std::string& path, const std::vector<char>& buffer) {
     if (!file.is_open()) return false;
     file.write(buffer.data(), static_cast<std::streamsize>(std::strlen(buffer.data())));
     return true;
+}
+
+bool IsSamePathOrChild(const std::string& candidatePath, const std::string& parentPath) {
+    if (candidatePath.empty() || parentPath.empty()) {
+        return false;
+    }
+
+    if (candidatePath == parentPath) {
+        return true;
+    }
+
+    const char separator = '/';
+    return candidatePath.size() > parentPath.size() &&
+        candidatePath.compare(0, parentPath.size(), parentPath) == 0 &&
+        candidatePath[parentPath.size()] == separator;
+}
+
+void ClearSelectionIfDeleted(BrowserState& state, const std::string& deletedPath, const std::string& projectRootPath) {
+    if (IsSamePathOrChild(state.selectedPath, deletedPath)) {
+        state.selectedPath.clear();
+    }
+
+    if (IsSamePathOrChild(state.loadedTextPath, deletedPath)) {
+        state.loadedTextPath.clear();
+        state.textDirty = false;
+        std::fill(state.textBuffer.begin(), state.textBuffer.end(), '\0');
+    }
+
+    if (IsSamePathOrChild(state.currentDirectory, deletedPath)) {
+        state.currentDirectory = projectRootPath;
+    }
+}
+
+void DeletePendingEntry(BrowserState& state, EditorState& editorState) {
+    std::string error;
+    const std::string deletedPath = state.pendingDeletePath;
+    if (ProjectManager::DeleteProjectEntry(BuildProjectDescriptor(editorState), deletedPath, error)) {
+        editorState.assetRegistry.synchronizeProjectAssets();
+        if (!editorState.assetManifestPath.empty()) {
+            editorState.assetRegistry.saveManifest(editorState.assetManifestPath);
+        }
+        editorState.assetStatus = "Deleted: " + deletedPath;
+        editorState.pendingProjectCommand = ProjectCommand::Sync;
+        ClearSelectionIfDeleted(state, deletedPath, editorState.projectRootPath);
+        if (!editorState.sceneFilePath.empty() && IsSamePathOrChild(editorState.sceneFilePath, deletedPath)) {
+            editorState.projectStatus = "The currently opened scene was deleted from disk";
+            editorState.sceneFilePath.clear();
+        }
+    } else {
+        editorState.assetStatus = error.empty() ? "Failed to delete entry" : error;
+    }
+}
+
+void QueueDeleteForPath(BrowserState& state, const std::string& path) {
+    state.pendingDeletePath = path;
+    state.openDeletePopup = true;
 }
 
 void AssignAssetToSelection(SceneState& sceneState, EditorState& editorState, const AssetRecord& asset) {
@@ -286,6 +359,9 @@ void DrawFolderTree(const fs::path& directory, BrowserState& state, EditorState&
             }
             if (ImGui::MenuItem("Rename")) {
                 QueueRenameForPath(state, childPath);
+            }
+            if (ImGui::MenuItem("Delete")) {
+                QueueDeleteForPath(state, childPath);
             }
             ImGui::EndPopup();
         }
@@ -402,33 +478,39 @@ void DrawAssetPanel(SceneState& sceneState, EditorState& editorState)
     ImGui::TextWrapped("Project Root: %s", editorState.projectRootPath.c_str());
     ImGui::TextWrapped("%s", editorState.assetStatus.c_str());
     ImGui::Separator();
+    ImGui::Text("Current Folder: %s", RelativeDirectoryLabel(editorState, browserState.currentDirectory).c_str());
+    if (browserState.currentDirectory != editorState.projectRootPath) {
+        ImGui::SameLine();
+        if (ImGui::Button("Back To Project Root")) {
+            browserState.currentDirectory = editorState.projectRootPath;
+            browserState.selectedPath = editorState.projectRootPath;
+        }
+    }
 
     if (browserState.openRenamePopup) {
         ImGui::OpenPopup("RenameProjectEntryPopup");
         browserState.openRenamePopup = false;
     }
+    if (browserState.openDeletePopup) {
+        ImGui::OpenPopup("DeleteProjectEntryPopup");
+        browserState.openDeletePopup = false;
+    }
 
     if (ImGui::BeginPopupModal("DeleteProjectEntryPopup", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::TextWrapped("Delete this file from the project?");
+        ImGui::TextWrapped("Delete this entry from the project?");
         ImGui::TextWrapped("%s", browserState.pendingDeletePath.c_str());
         if (ImGui::Button("Delete", ImVec2(120.0f, 0.0f))) {
-            std::string error;
-            if (ProjectManager::DeleteProjectEntry(BuildProjectDescriptor(editorState), browserState.pendingDeletePath, error)) {
-                editorState.assetStatus = "Deleted: " + browserState.pendingDeletePath;
-                editorState.pendingProjectCommand = ProjectCommand::Sync;
-                if (browserState.selectedPath == browserState.pendingDeletePath) browserState.selectedPath.clear();
-                if (browserState.loadedTextPath == browserState.pendingDeletePath) {
-                    browserState.loadedTextPath.clear();
-                    browserState.textDirty = false;
-                    std::fill(browserState.textBuffer.begin(), browserState.textBuffer.end(), '\0');
-                }
+            DeletePendingEntry(browserState, editorState);
+            if (browserState.pendingDeletePath.empty() || editorState.assetStatus.rfind("Deleted: ", 0) == 0) {
+                browserState.pendingDeletePath.clear();
                 ImGui::CloseCurrentPopup();
-            } else {
-                editorState.assetStatus = error.empty() ? "Failed to delete file" : error;
             }
         }
         ImGui::SameLine();
-        if (ImGui::Button("Cancel##Delete", ImVec2(120.0f, 0.0f))) ImGui::CloseCurrentPopup();
+        if (ImGui::Button("Cancel##Delete", ImVec2(120.0f, 0.0f))) {
+            browserState.pendingDeletePath.clear();
+            ImGui::CloseCurrentPopup();
+        }
         ImGui::EndPopup();
     }
 
@@ -439,25 +521,34 @@ void DrawAssetPanel(SceneState& sceneState, EditorState& editorState)
         if (ImGui::Button("Rename", ImVec2(120.0f, 0.0f))) {
             std::string renamedPath;
             std::string error;
+            const std::string previousRenamePath = browserState.pendingRenamePath;
             if (ProjectManager::RenameProjectEntry(
                 BuildProjectDescriptor(editorState),
-                browserState.pendingRenamePath,
+                previousRenamePath,
                 browserState.renameItemName,
                 renamedPath,
                 error)) {
                 editorState.assetStatus = "Renamed: " + renamedPath;
                 editorState.pendingProjectCommand = ProjectCommand::Sync;
                 browserState.selectedPath = renamedPath;
-                if (browserState.loadedTextPath == browserState.pendingRenamePath) {
+                if (browserState.loadedTextPath == previousRenamePath) {
                     browserState.loadedTextPath = renamedPath;
                 }
+                browserState.pendingRenamePath.clear();
+                browserState.renameItemName[0] = '\0';
+                browserState.openRenamePopup = false;
                 ImGui::CloseCurrentPopup();
             } else {
                 editorState.assetStatus = error.empty() ? "Failed to rename entry" : error;
             }
         }
         ImGui::SameLine();
-        if (ImGui::Button("Cancel##Rename", ImVec2(120.0f, 0.0f))) ImGui::CloseCurrentPopup();
+        if (ImGui::Button("Cancel##Rename", ImVec2(120.0f, 0.0f))) {
+            browserState.pendingRenamePath.clear();
+            browserState.renameItemName[0] = '\0';
+            browserState.openRenamePopup = false;
+            ImGui::CloseCurrentPopup();
+        }
         ImGui::EndPopup();
     }
 
@@ -509,6 +600,16 @@ void DrawAssetPanel(SceneState& sceneState, EditorState& editorState)
             std::vector<fs::directory_entry> entries;
             std::error_code ec;
             const fs::path currentDir = ResourcePathUtils::Utf8ToPath(browserState.currentDirectory);
+            const fs::path projectRoot = ResourcePathUtils::Utf8ToPath(editorState.projectRootPath);
+            if (NormalizePath(currentDir) != NormalizePath(projectRoot)) {
+                if (ImGui::Selectable("[Up] ..", false)) {
+                    const fs::path parent = currentDir.parent_path();
+                    browserState.currentDirectory =
+                        NormalizePath(IsSamePathOrChild(NormalizePath(parent), NormalizePath(projectRoot)) ? parent : projectRoot);
+                    browserState.selectedPath = browserState.currentDirectory;
+                }
+                ImGui::Separator();
+            }
             for (const auto& entry : fs::directory_iterator(currentDir, fs::directory_options::skip_permission_denied, ec)) {
                 if (ec) {
                     ec.clear();
@@ -572,6 +673,9 @@ void DrawAssetPanel(SceneState& sceneState, EditorState& editorState)
                         if (ImGui::MenuItem("Rename")) {
                             QueueRenameForPath(browserState, normalized);
                         }
+                        if (ImGui::MenuItem("Delete")) {
+                            QueueDeleteForPath(browserState, normalized);
+                        }
                     } else {
                         if (IsSceneFile(path) && ImGui::MenuItem("Open Scene")) {
                             OpenScene(sceneState, editorState, normalized);
@@ -580,8 +684,7 @@ void DrawAssetPanel(SceneState& sceneState, EditorState& editorState)
                             QueueRenameForPath(browserState, normalized);
                         }
                         if (ImGui::MenuItem("Delete")) {
-                            browserState.pendingDeletePath = normalized;
-                            ImGui::OpenPopup("DeleteProjectEntryPopup");
+                            QueueDeleteForPath(browserState, normalized);
                         }
                     }
                     ImGui::EndPopup();

@@ -1,5 +1,5 @@
-//modify at 28-03-2026 by Lancelot
 #pragma once
+
 #include <cstdint>
 #include <string>
 #include <vector>

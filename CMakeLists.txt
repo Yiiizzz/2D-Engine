@@ -46,6 +46,7 @@ add_executable(SDLTest
     backend/resource/AssetRegistry.cpp
     backend/resource/ResourcePathUtils.cpp
     backend/resource/Sprite.cpp
+    backend/SceneSerializer.cpp
 
     # frontend 编辑器
     frontend/src/editor/EditorUI.cpp
@@ -53,6 +54,7 @@ add_executable(SDLTest
     frontend/src/editor/Panels/AssetPanel.cpp
     frontend/src/editor/Panels/HierarchyPanel.cpp 
     frontend/src/editor/Panels/InspectorPanel.cpp 
+    frontend/src/editor/Panels/ConsolePanel.cpp
 
     # ImGui 核心 【正确写法：一行一个，不要引号！】
     external/imgui/imgui.cpp
@@ -61,11 +63,10 @@ add_executable(SDLTest
     external/imgui/imgui_tables.cpp
     external/imgui/imgui_widgets.cpp
 
-
     # ImGui SDL3 后端
     external/imgui/backends/imgui_impl_sdl3.cpp
     external/imgui/backends/imgui_impl_sdlrenderer3.cpp
- "frontend/src/editor/Panels/ConsolePanel.h" "frontend/src/editor/Panels/ConsolePanel.cpp" "backend/SceneSerializer.h" "backend/SceneSerializer.cpp")
+)
 
 # 链接库
 target_link_libraries(SDLTest PRIVATE

@@ -1,36 +1,71 @@
 #include "HierarchyPanel.h"
+
+#include "../EditorActions.h"
 #include "imgui.h"
 
-#include <string>
+#include <array>
+#include <cstdint>
+#include <cstdio>
 
 void DrawHierarchyPanel(SceneState& sceneState, EditorState& editorState)
 {
-    ImGui::Begin("Hierarchy");
+    ImGui::Begin("Hierarchy", &editorState.showHierarchy);
 
-    static char filterBuffer[96] = "";
+    std::array<char, 128> searchBuffer{};
+    std::snprintf(searchBuffer.data(), searchBuffer.size(), "%s", editorState.hierarchySearch.c_str());
+    if (ImGui::InputTextWithHint("##HierarchySearch", "Search objects...", searchBuffer.data(), searchBuffer.size())) {
+        editorState.hierarchySearch = searchBuffer.data();
+    }
 
-    ImGui::TextUnformatted("Scene Objects");
     ImGui::SameLine();
-    ImGui::TextDisabled("(%d)", static_cast<int>(sceneState.objects.size()));
-    ImGui::Separator();
-    ImGui::InputTextWithHint("##HierarchyFilter", "Search objects", filterBuffer, sizeof(filterBuffer));
-    ImGui::TextDisabled("Names stay readable while the panel width changes.");
+    if (ImGui::Button("+")) {
+        CreateEmptyObject(sceneState, editorState, "GameObject", "Hierarchy");
+    }
 
-    ImGui::BeginChild("HierarchyList", ImVec2(0.0f, 0.0f), true);
-    {
+    ImGuiTreeNodeFlags rootFlags = ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth;
+    const bool sceneOpen = ImGui::TreeNodeEx("Active Scene", rootFlags, "Active Scene (%d)", static_cast<int>(sceneState.objects.size()));
+
+    if (ImGui::BeginPopupContextWindow("HierarchyWindowContext", ImGuiPopupFlags_NoOpenOverItems | ImGuiPopupFlags_MouseButtonRight)) {
+        if (ImGui::MenuItem("Create Empty")) {
+            CreateEmptyObject(sceneState, editorState, "GameObject", "Hierarchy context");
+        }
+        ImGui::EndPopup();
+    }
+
+    if (sceneOpen) {
         for (int i = 0; i < static_cast<int>(sceneState.objects.size()); ++i) {
-            if (filterBuffer[0] != '\0' &&
-                sceneState.objects[i].name.find(filterBuffer) == std::string::npos) {
+            GameObject& object = sceneState.objects[i];
+            if (!ContainsInsensitive(object.name, editorState.hierarchySearch)) {
                 continue;
             }
-            const bool selected = (editorState.selectedObjectIndex == i);
-            const std::string label = std::to_string(sceneState.objects[i].id) + "  " + sceneState.objects[i].name;
-            if (ImGui::Selectable(label.c_str(), selected)) {
+
+            ImGuiTreeNodeFlags itemFlags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_SpanAvailWidth;
+            if (editorState.selectedObjectIndex == i) {
+                itemFlags |= ImGuiTreeNodeFlags_Selected;
+            }
+
+            ImGui::TreeNodeEx(reinterpret_cast<void*>(static_cast<intptr_t>(object.id)), itemFlags, "%s", object.name.c_str());
+            if (ImGui::IsItemClicked()) {
                 editorState.selectedObjectIndex = i;
+                FocusAssetPath(editorState, object.texturePath);
+            }
+
+            if (ImGui::BeginPopupContextItem()) {
+                if (ImGui::MenuItem("Duplicate")) {
+                    editorState.selectedObjectIndex = i;
+                    DuplicateSelectedObject(sceneState, editorState, "Hierarchy context");
+                }
+
+                if (ImGui::MenuItem("Delete")) {
+                    editorState.selectedObjectIndex = i;
+                    DeleteSelectedObject(sceneState, editorState);
+                }
+
+                ImGui::EndPopup();
             }
         }
+        ImGui::TreePop();
     }
-    ImGui::EndChild();
 
     ImGui::End();
 }

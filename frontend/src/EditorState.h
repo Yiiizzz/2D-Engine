@@ -1,8 +1,9 @@
 #pragma once
 
 #include "../../backend/resource/AssetRegistry.h"
-#include <cstdint>
+
 #include <string>
+#include <vector>
 
 enum class EditorMode {
     Edit,
@@ -22,6 +23,17 @@ enum class ProjectCommand {
     Create,
     Open,
     Sync
+};
+
+enum class EditorLogLevel {
+    Info,
+    Warning,
+    Error
+};
+
+struct EditorLogEntry {
+    EditorLogLevel level = EditorLogLevel::Info;
+    std::string message;
 };
 
 struct EditorState {
@@ -50,4 +62,18 @@ struct EditorState {
     std::string scriptStatus;
     std::string pendingProjectName;
     std::string pendingProjectDirectory;
+    bool showScene = true;
+    bool showHierarchy = true;
+    bool showInspector = true;
+    bool showProject = true;
+    bool showConsole = true;
+    bool resetLayoutRequested = false;
+    bool consoleShowInfo = true;
+    bool consoleShowWarnings = true;
+    bool consoleShowErrors = true;
+    bool consoleAutoScroll = true;
+    std::string hierarchySearch;
+    std::string focusAssetPath;
+    std::vector<EditorLogEntry> logs;
 };
+

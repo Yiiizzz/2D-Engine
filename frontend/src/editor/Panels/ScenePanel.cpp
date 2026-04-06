@@ -1,6 +1,9 @@
 #include "ScenePanel.h"
-#include "imgui.h"
+
+#include "../EditorActions.h"
 #include "../../../../backend/SceneSerializer.h"
+#include "imgui.h"
+
 #include <algorithm>
 #include <cstdint>
 
@@ -52,7 +55,7 @@ int FindTopmostObjectAt(const SceneState& sceneState, float sceneX, float sceneY
 
 void AssignTextureAssetToObject(SceneState& sceneState, EditorState& editorState, int objectIndex, const AssetRecord& asset) {
     if (objectIndex < 0 || objectIndex >= static_cast<int>(sceneState.objects.size())) {
-        editorState.assetStatus = "Drop a texture onto a scene object or select one first";
+        editorState.assetStatus = "Dropped texture created a new sprite in the scene";
         return;
     }
 
@@ -60,11 +63,13 @@ void AssignTextureAssetToObject(SceneState& sceneState, EditorState& editorState
     sceneState.objects[objectIndex].texturePath = !asset.relativePath.empty() ? asset.relativePath : asset.sourcePath;
     editorState.selectedObjectIndex = objectIndex;
     editorState.assetStatus = "Bound texture via drag: " + asset.name;
+    AddEditorLog(editorState, EditorLogLevel::Info, editorState.assetStatus);
 }
 
 void AssignScriptAssetToObject(SceneState& sceneState, EditorState& editorState, int objectIndex, const AssetRecord& asset) {
     if (objectIndex < 0 || objectIndex >= static_cast<int>(sceneState.objects.size())) {
         editorState.assetStatus = "Drop a script onto a scene object or select one first";
+        AddEditorLog(editorState, EditorLogLevel::Warning, editorState.assetStatus);
         return;
     }
 
@@ -72,11 +77,12 @@ void AssignScriptAssetToObject(SceneState& sceneState, EditorState& editorState,
     sceneState.objects[objectIndex].scriptPath = asset.sourcePath;
     editorState.selectedObjectIndex = objectIndex;
     editorState.assetStatus = "Bound script via drag: " + asset.name;
+    AddEditorLog(editorState, EditorLogLevel::Info, editorState.assetStatus);
 }
 
 void DrawActionButtonRow(SceneState& sceneState, EditorState& editorState, int index) {
     const float width = ImGui::GetContentRegionAvail().x;
-    const int columns = width < 780.0f ? 2 : 4;
+    const int columns = width < 780.0f ? 2 : 5;
     const float spacing = ImGui::GetStyle().ItemSpacing.x;
     const float buttonWidth = (width - spacing * static_cast<float>(columns - 1)) / static_cast<float>(columns);
 
@@ -88,85 +94,48 @@ void DrawActionButtonRow(SceneState& sceneState, EditorState& editorState, int i
 
     drawButton("Reset Position", [&]() {
         if (index >= 0 && index < static_cast<int>(sceneState.objects.size())) {
-            sceneState.objects[index].position[0] = 0.0f;
-            sceneState.objects[index].position[1] = 0.0f;
+            ResetObjectPosition(sceneState.objects[index]);
+            AddEditorLog(editorState, EditorLogLevel::Info, "Reset selected object position.");
         }
     });
 
     if (columns > 1) ImGui::SameLine();
     drawButton("Reset Scale", [&]() {
         if (index >= 0 && index < static_cast<int>(sceneState.objects.size())) {
-            sceneState.objects[index].scale[0] = 1.0f;
-            sceneState.objects[index].scale[1] = 1.0f;
+            ResetObjectScale(sceneState.objects[index]);
+            AddEditorLog(editorState, EditorLogLevel::Info, "Reset selected object scale.");
         }
     });
 
-    if (columns > 2) {
-        ImGui::SameLine();
-    } else {
-        ImGui::NewLine();
-    }
+    if (columns > 2) ImGui::SameLine();
     drawButton("Reset Rotation", [&]() {
         if (index >= 0 && index < static_cast<int>(sceneState.objects.size())) {
-            sceneState.objects[index].rotation = 0.0f;
+            ResetObjectRotation(sceneState.objects[index]);
+            AddEditorLog(editorState, EditorLogLevel::Info, "Reset selected object rotation.");
         }
     });
 
-    if (columns > 3) {
-        ImGui::SameLine();
-    } else {
-        ImGui::NewLine();
-    }
-    drawButton("Add Object", [&]() {
-        GameObject newObject;
-        newObject.id = static_cast<int>(sceneState.objects.size());
-        newObject.name = "New Object " + std::to_string(newObject.id);
-        newObject.position[0] = 0.0f;
-        newObject.position[1] = 0.0f;
-        newObject.scale[0] = 1.0f;
-        newObject.scale[1] = 1.0f;
-        newObject.rotation = 0.0f;
-        newObject.textureResourceId = 0;
-        newObject.texturePath = "pillar.png";
-        newObject.scriptResourceId = 0;
-        newObject.scriptPath.clear();
-        sceneState.objects.push_back(newObject);
-        editorState.selectedObjectIndex = static_cast<int>(sceneState.objects.size()) - 1;
+    if (columns > 3) ImGui::SameLine();
+    drawButton("Add Empty", [&]() {
+        CreateEmptyObject(sceneState, editorState, "GameObject", "Scene panel");
     });
 
-    if (columns > 4) {
-        ImGui::SameLine();
-    } else {
-        ImGui::NewLine();
-    }
+    if (columns > 4) ImGui::SameLine();
     drawButton("Delete Selected", [&]() {
-        if (index >= 0 && index < static_cast<int>(sceneState.objects.size())) {
-            sceneState.objects.erase(sceneState.objects.begin() + index);
-            editorState.isDraggingSceneObject = false;
-            editorState.draggingObjectIndex = -1;
-            editorState.sceneDragOffsetX = 0.0f;
-            editorState.sceneDragOffsetY = 0.0f;
-
-            if (sceneState.objects.empty()) {
-                editorState.selectedObjectIndex = -1;
-            }
-            else if (index >= static_cast<int>(sceneState.objects.size())) {
-                editorState.selectedObjectIndex = static_cast<int>(sceneState.objects.size()) - 1;
-            }
-        }
+        DeleteSelectedObject(sceneState, editorState);
     });
 }
 
-}  // namespace
+}
 
 void DrawScenePanel(SceneState& sceneState, EditorState& editorState, SDL_Texture* sceneTexture)
 {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 8));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0);
 
-    ImGui::Begin("Scene");
+    ImGui::Begin("Scene", &editorState.showScene);
 
-    int index = editorState.selectedObjectIndex;
+    const int index = editorState.selectedObjectIndex;
     ImGui::TextUnformatted("Viewport");
 
     ImVec2 availableRegion = ImGui::GetContentRegionAvail();
@@ -214,17 +183,24 @@ void DrawScenePanel(SceneState& sceneState, EditorState& editorState, SDL_Textur
             int dropTargetIndex = editorState.selectedObjectIndex;
             float sceneX = 0.0f;
             float sceneY = 0.0f;
-            if (MapScreenToScenePoint(editorState, ImGui::GetIO().MousePos, sceneX, sceneY)) {
+            const bool hasScenePoint = MapScreenToScenePoint(editorState, ImGui::GetIO().MousePos, sceneX, sceneY);
+            if (hasScenePoint) {
                 const int hoveredObject = FindTopmostObjectAt(sceneState, sceneX, sceneY);
                 if (hoveredObject >= 0) {
                     dropTargetIndex = hoveredObject;
+                } else {
+                    dropTargetIndex = -1;
                 }
             }
 
             if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ASSET_TEXTURE_ID")) {
                 const std::uint64_t assetId = *static_cast<const std::uint64_t*>(payload->Data);
                 if (const AssetRecord* asset = editorState.assetRegistry.findById(assetId)) {
-                    AssignTextureAssetToObject(sceneState, editorState, dropTargetIndex, *asset);
+                    if (dropTargetIndex >= 0) {
+                        AssignTextureAssetToObject(sceneState, editorState, dropTargetIndex, *asset);
+                    } else if (hasScenePoint) {
+                        CreateObjectFromAsset(sceneState, editorState, *asset, sceneX, sceneY, "Scene drag-drop");
+                    }
                 }
             }
 
@@ -252,8 +228,8 @@ void DrawScenePanel(SceneState& sceneState, EditorState& editorState, SDL_Textur
     ImGui::Separator();
     DrawActionButtonRow(sceneState, editorState, index);
     ImGui::Spacing();
-    const bool hasProject = !editorState.sceneFilePath.empty();
 
+    const bool hasProject = !editorState.sceneFilePath.empty();
     if (!hasProject) {
         ImGui::BeginDisabled();
     }
@@ -268,9 +244,11 @@ void DrawScenePanel(SceneState& sceneState, EditorState& editorState, SDL_Textur
 
         if (SaveSceneToFile(sceneState, sceneName, editorState.sceneFilePath)) {
             sceneStatus = "Scene saved successfully";
+            AddEditorLog(editorState, EditorLogLevel::Info, "Saved scene: " + editorState.sceneFilePath);
         }
         else {
             sceneStatus = "Failed to save scene";
+            AddEditorLog(editorState, EditorLogLevel::Error, "Failed to save scene: " + editorState.sceneFilePath);
         }
     }
 
@@ -281,10 +259,16 @@ void DrawScenePanel(SceneState& sceneState, EditorState& editorState, SDL_Textur
     else {
         ImGui::TextWrapped("Scene File: %s", editorState.sceneFilePath.c_str());
     }
+
+    if (index >= 0 && index < static_cast<int>(sceneState.objects.size())) {
+        const GameObject& object = sceneState.objects[index];
+        ImGui::TextWrapped("Selected: %s", object.name.c_str());
+        ImGui::TextWrapped("Texture: %s", object.texturePath.empty() ? "None" : object.texturePath.c_str());
+    }
+
     ImGui::TextWrapped("Status: %s", sceneStatus.c_str());
-    ImGui::TextWrapped("Scene Input: click to select, drag to move, drop texture or script assets onto objects.");
+    ImGui::TextWrapped("Scene Input: click to select, drag to move, drop textures onto empty space to create sprites, or onto objects to rebind them.");
 
     ImGui::End();
-
     ImGui::PopStyleVar(2);
 }

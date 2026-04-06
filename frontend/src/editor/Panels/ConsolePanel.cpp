@@ -1,28 +1,63 @@
 #include "ConsolePanel.h"
+#include "../EditorActions.h"
+
 #include "imgui.h"
 
-void DrawConsolePanel()
+void DrawConsolePanel(EditorState& editorState)
 {
-    ImGui::Begin("Console");
+    ImGui::Begin("Console", &editorState.showConsole);
 
-    ImGui::TextUnformatted("Console");
-    ImGui::Separator();
-
-    ImGui::BeginChild("ConsoleLog", ImVec2(0.0f, 0.0f), true);
+    if (ImGui::Button("Clear"))
     {
-        ImGui::TextColored(ImVec4(0.58f, 0.82f, 1.0f, 1.0f), "[INFO]");
-        ImGui::SameLine();
-        ImGui::TextWrapped("Editor UI initialized and ready.");
-
-        ImGui::TextColored(ImVec4(0.67f, 0.86f, 0.62f, 1.0f), "[ASSET]");
-        ImGui::SameLine();
-        ImGui::TextWrapped("Imported resources and scene changes will appear here in a fuller runtime logging pass.");
-
-        ImGui::TextColored(ImVec4(0.95f, 0.78f, 0.42f, 1.0f), "[TIP]");
-        ImGui::SameLine();
-        ImGui::TextWrapped("Project and Console share the lower dock as tabs, similar to Unity's editor layout.");
+        editorState.logs.clear();
     }
-    ImGui::EndChild();
 
+    ImGui::SameLine();
+    ImGui::Checkbox("Info", &editorState.consoleShowInfo);
+    ImGui::SameLine();
+    ImGui::Checkbox("Warnings", &editorState.consoleShowWarnings);
+    ImGui::SameLine();
+    ImGui::Checkbox("Errors", &editorState.consoleShowErrors);
+    ImGui::SameLine();
+    ImGui::Checkbox("Auto Scroll", &editorState.consoleAutoScroll);
+
+    ImGui::Separator();
+    ImGui::BeginChild("ConsoleLogScroll");
+
+    bool shouldScroll = false;
+    if (editorState.logs.empty())
+    {
+        ImGui::TextDisabled("No logs yet.");
+    }
+    else
+    {
+        for (auto it = editorState.logs.begin(); it != editorState.logs.end(); ++it)
+        {
+            if (it->level == EditorLogLevel::Info && !editorState.consoleShowInfo)
+                continue;
+            if (it->level == EditorLogLevel::Warning && !editorState.consoleShowWarnings)
+                continue;
+            if (it->level == EditorLogLevel::Error && !editorState.consoleShowErrors)
+                continue;
+
+            ImVec4 color = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
+            if (it->level == EditorLogLevel::Warning)
+                color = ImVec4(0.95f, 0.80f, 0.35f, 1.0f);
+            else if (it->level == EditorLogLevel::Error)
+                color = ImVec4(0.95f, 0.45f, 0.45f, 1.0f);
+
+            ImGui::PushStyleColor(ImGuiCol_Text, color);
+            ImGui::TextWrapped("[%s] %s", GetEditorLogLevelLabel(it->level), it->message.c_str());
+            ImGui::PopStyleColor();
+            shouldScroll = true;
+        }
+    }
+
+    if (editorState.consoleAutoScroll && shouldScroll)
+    {
+        ImGui::SetScrollHereY(1.0f);
+    }
+
+    ImGui::EndChild();
     ImGui::End();
 }

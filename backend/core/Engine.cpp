@@ -1,18 +1,21 @@
 #include "Engine.h"
-#include <iostream>
+
+#include "../../frontend/src/editor/EditorActions.h"
 #include "../../frontend/src/editor/EditorUI.h"
+#include "../SceneSerializer.h"
+
 #include <SDL3/SDL.h>
-#include <imgui.h>
 #include <backends/imgui_impl_sdl3.h>
 #include <backends/imgui_impl_sdlrenderer3.h>
+#include <imgui.h>
+
 #include <filesystem>
-#include "../SceneSerializer.h"
+
+namespace fs = std::filesystem;
 
 Engine::Engine() : running(false) {}
 
 extern void SetupEditorStyle();
-
-namespace fs = std::filesystem;
 
 bool Engine::init() {
     if (!windowManager.init("SDL3 Window Control Demo", 800, 600)) {
@@ -43,46 +46,45 @@ bool Engine::init() {
     editorState.selectedObjectIndex = 0;
     editorState.assetStatus = "Create or open a project to import and persist project assets";
     editorState.sceneFilePath.clear();
+    AddEditorLog(editorState, EditorLogLevel::Info, "Engine initialized.");
 
     running = true;
     return true;
 }
+
 void Engine::handleEditorCommands()
 {
-    if (editorState.pendingCommand != EditorCommand::None) {
-        std::cout << "[Engine] pendingCommand = "
-            << static_cast<int>(editorState.pendingCommand) << std::endl;
-    }
-
     switch (editorState.pendingCommand) {
     case EditorCommand::Play:
         SDL_Log("[Engine] Play command received");
         if (editorState.mode == EditorMode::Edit) {
-            std::cout << "[Engine] Backup saved" << std::endl;
             playModeSceneBackup = sceneState;
             hasPlayModeBackup = true;
         }
         editorState.mode = EditorMode::Play;
+        AddEditorLog(editorState, EditorLogLevel::Info, "Entered Play mode.");
         break;
 
     case EditorCommand::Pause:
         SDL_Log("[Engine] Pause command received");
         if (editorState.mode == EditorMode::Play) {
             editorState.mode = EditorMode::Pause;
+            AddEditorLog(editorState, EditorLogLevel::Info, "Paused Play mode.");
         }
         else if (editorState.mode == EditorMode::Pause) {
             editorState.mode = EditorMode::Play;
+            AddEditorLog(editorState, EditorLogLevel::Info, "Resumed Play mode.");
         }
         break;
 
     case EditorCommand::Stop:
         SDL_Log("[Engine] Stop command received");
         if (hasPlayModeBackup) {
-            SDL_Log("[Engine] Restoring backup");
             sceneState = playModeSceneBackup;
             hasPlayModeBackup = false;
         }
         editorState.mode = EditorMode::Edit;
+        AddEditorLog(editorState, EditorLogLevel::Info, "Returned to Edit mode.");
         break;
 
     case EditorCommand::None:
@@ -135,6 +137,7 @@ bool Engine::openProject(const ProjectDescriptor& project) {
         ? "Project assets loaded"
         : "Project opened with no imported assets yet";
     lastProjectSyncTick = SDL_GetTicks();
+    AddEditorLog(editorState, EditorLogLevel::Info, editorState.projectStatus);
     return true;
 }
 
@@ -168,6 +171,7 @@ void Engine::clearMissingAssetReferences(const std::vector<AssetRecord>& removed
     if (clearedBindings > 0) {
         editorState.assetStatus =
             "Detected external asset removal. Cleared " + std::to_string(clearedBindings) + " invalid object binding(s)";
+        AddEditorLog(editorState, EditorLogLevel::Warning, editorState.assetStatus);
     }
 }
 
@@ -197,6 +201,7 @@ void Engine::syncProjectAssets(bool force) {
 
     if (projectMissing) {
         editorState.projectStatus = "Current project folder was removed outside the editor";
+        AddEditorLog(editorState, EditorLogLevel::Error, editorState.projectStatus);
         return;
     }
 
@@ -207,6 +212,7 @@ void Engine::syncProjectAssets(bool force) {
         editorState.assetStatus =
             "Detected " + std::to_string(summary.addedCount) + " new asset(s) from the project folder";
     }
+    AddEditorLog(editorState, EditorLogLevel::Info, editorState.projectStatus);
 }
 
 void Engine::handleProjectCommands() {
@@ -247,6 +253,7 @@ void Engine::handleProjectCommands() {
 
     if (!success && !error.empty()) {
         editorState.projectStatus = error;
+        AddEditorLog(editorState, EditorLogLevel::Error, error);
     }
 
     editorState.pendingProjectCommand = ProjectCommand::None;
@@ -265,7 +272,6 @@ void Engine::run() {
         ImGui_ImplSDLRenderer3_NewFrame();
         ImGui::NewFrame();
 
-        // 5. 逻辑更新
         renderer2D.clear();
         DrawEditorUI(sceneState, editorState, renderer2D.getSceneRenderTarget());
 

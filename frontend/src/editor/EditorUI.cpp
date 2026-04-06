@@ -1,12 +1,15 @@
 #define IMGUI_ENABLE_DOCKING
 #include "EditorUI.h"
-#include "imgui.h"
-#include "imgui_internal.h"
+
+#include "EditorActions.h"
 #include "Panels/HierarchyPanel.h"
 #include "Panels/ScenePanel.h"
 #include "Panels/InspectorPanel.h"
 #include "Panels/AssetPanel.h"
 #include "Panels/ConsolePanel.h"
+#include "imgui.h"
+#include "imgui_internal.h"
+
 #include <algorithm>
 
 namespace {
@@ -32,36 +35,146 @@ void DrawToolbarButton(const char* label, EditorCommand command, EditorState& ed
     }
 }
 
-void DrawMenuStrip(float viewportWidth) {
-    const bool compact = viewportWidth < 1360.0f;
+void ResetDefaultLayout(EditorState& editorState) {
+    editorState.showHierarchy = true;
+    editorState.showScene = true;
+    editorState.showInspector = true;
+    editorState.showProject = true;
+    editorState.showConsole = true;
+    editorState.resetLayoutRequested = true;
+    AddEditorLog(editorState, EditorLogLevel::Info, "Reset editor layout to default.");
+}
 
-    if (compact) {
-        ImGui::TextUnformatted("File   Edit   Assets   GameObject");
-        ImGui::TextUnformatted("Window   Help");
+void DrawFileMenu(EditorState& editorState) {
+    if (ImGui::MenuItem("Sync Project", "F5", false, !editorState.projectRootPath.empty())) {
+        editorState.pendingProjectCommand = ProjectCommand::Sync;
+    }
+
+    ImGui::Separator();
+    ImGui::MenuItem("New Project...", nullptr, false, false);
+    ImGui::MenuItem("Open Project...", nullptr, false, false);
+}
+
+void DrawEditMenu(SceneState& sceneState, EditorState& editorState) {
+    const bool hasSelection = HasSelectedObject(sceneState, editorState);
+
+    ImGui::MenuItem("Undo", "Ctrl+Z", false, false);
+    ImGui::MenuItem("Redo", "Ctrl+Y", false, false);
+    ImGui::Separator();
+
+    if (ImGui::MenuItem("Duplicate", "Ctrl+D", false, hasSelection)) {
+        DuplicateSelectedObject(sceneState, editorState, "Edit menu");
+    }
+
+    if (ImGui::MenuItem("Delete", "Delete", false, hasSelection)) {
+        DeleteSelectedObject(sceneState, editorState);
+    }
+}
+
+void DrawAssetsMenu(EditorState& editorState) {
+    if (ImGui::MenuItem("Open Project Panel")) {
+        editorState.showProject = true;
+    }
+
+    if (ImGui::MenuItem("Open Console")) {
+        editorState.showConsole = true;
+    }
+
+    ImGui::Separator();
+    if (ImGui::MenuItem("Sync Imported Assets", nullptr, false, !editorState.projectRootPath.empty())) {
+        editorState.pendingProjectCommand = ProjectCommand::Sync;
+    }
+}
+
+void DrawGameObjectMenu(SceneState& sceneState, EditorState& editorState) {
+    if (ImGui::MenuItem("Create Empty")) {
+        CreateEmptyObject(sceneState, editorState, "GameObject", "GameObject menu");
+    }
+
+    const AssetRecord* defaultTexture = editorState.assetRegistry.findByPath("pillar.png");
+    if (ImGui::MenuItem("Create Sprite", nullptr, false, defaultTexture != nullptr)) {
+        CreateObjectFromAsset(sceneState, editorState, *defaultTexture, 120.0f, 120.0f, "GameObject menu");
+    }
+}
+
+void DrawComponentMenu(SceneState& sceneState, EditorState& editorState) {
+    GameObject* selected = GetSelectedObject(sceneState, editorState);
+    const bool hasSelection = (selected != nullptr);
+
+    if (ImGui::MenuItem("Reset Position", nullptr, false, hasSelection)) {
+        ResetObjectPosition(*selected);
+        AddEditorLog(editorState, EditorLogLevel::Info, "Reset selected object position.");
+    }
+
+    if (ImGui::MenuItem("Reset Scale", nullptr, false, hasSelection)) {
+        ResetObjectScale(*selected);
+        AddEditorLog(editorState, EditorLogLevel::Info, "Reset selected object scale.");
+    }
+
+    if (ImGui::MenuItem("Reset Rotation", nullptr, false, hasSelection)) {
+        ResetObjectRotation(*selected);
+        AddEditorLog(editorState, EditorLogLevel::Info, "Reset selected object rotation.");
+    }
+}
+
+void DrawWindowMenu(EditorState& editorState) {
+    ImGui::MenuItem("Scene", nullptr, &editorState.showScene);
+    ImGui::MenuItem("Hierarchy", nullptr, &editorState.showHierarchy);
+    ImGui::MenuItem("Inspector", nullptr, &editorState.showInspector);
+    ImGui::MenuItem("Project", nullptr, &editorState.showProject);
+    ImGui::MenuItem("Console", nullptr, &editorState.showConsole);
+
+    ImGui::Separator();
+    if (ImGui::MenuItem("Reset Layout")) {
+        ResetDefaultLayout(editorState);
+    }
+}
+
+void DrawHelpMenu() {
+    ImGui::MenuItem("About 2D Engine", nullptr, false, false);
+}
+
+void DrawToolbarMenuBar(SceneState& sceneState, EditorState& editorState) {
+    if (!ImGui::BeginMenuBar()) {
         return;
     }
 
-    ImGui::TextUnformatted("File");
-    ImGui::SameLine(0.0f, 14.0f);
-    ImGui::TextUnformatted("Edit");
-    ImGui::SameLine(0.0f, 14.0f);
-    ImGui::TextUnformatted("Assets");
-    ImGui::SameLine(0.0f, 14.0f);
-    ImGui::TextUnformatted("GameObject");
-    ImGui::SameLine(0.0f, 14.0f);
-    ImGui::TextUnformatted("Window");
-    ImGui::SameLine(0.0f, 14.0f);
-    ImGui::TextUnformatted("Help");
-
-    if (viewportWidth >= 1600.0f) {
-        const float rightAnchor = ImGui::GetWindowWidth() - 300.0f;
-        if (rightAnchor > ImGui::GetCursorPosX()) {
-            ImGui::SameLine(rightAnchor);
-        } else {
-            ImGui::SameLine();
-        }
-        ImGui::TextDisabled("2D Workspace  |  Responsive Editor Layout");
+    if (ImGui::BeginMenu("File")) {
+        DrawFileMenu(editorState);
+        ImGui::EndMenu();
     }
+
+    if (ImGui::BeginMenu("Edit")) {
+        DrawEditMenu(sceneState, editorState);
+        ImGui::EndMenu();
+    }
+
+    if (ImGui::BeginMenu("Assets")) {
+        DrawAssetsMenu(editorState);
+        ImGui::EndMenu();
+    }
+
+    if (ImGui::BeginMenu("GameObject")) {
+        DrawGameObjectMenu(sceneState, editorState);
+        ImGui::EndMenu();
+    }
+
+    if (ImGui::BeginMenu("Component")) {
+        DrawComponentMenu(sceneState, editorState);
+        ImGui::EndMenu();
+    }
+
+    if (ImGui::BeginMenu("Window")) {
+        DrawWindowMenu(editorState);
+        ImGui::EndMenu();
+    }
+
+    if (ImGui::BeginMenu("Help")) {
+        DrawHelpMenu();
+        ImGui::EndMenu();
+    }
+
+    ImGui::EndMenuBar();
 }
 
 }
@@ -122,14 +235,10 @@ void DrawToolbarContent(EditorState& editorState)
     if (editorState.mode == EditorMode::Play) modeText = "Play";
     else if (editorState.mode == EditorMode::Pause) modeText = "Pause";
 
-    DrawMenuStrip(width);
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
-
     if (compact) {
         ImGui::TextUnformatted("SDLTest 2D Editor");
-        ImGui::TextDisabled("Responsive workspace");
+        ImGui::SameLine();
+        ImGui::TextDisabled("| Project-aware workspace");
         DrawToolbarButton("Play##Toolbar", EditorCommand::Play, editorState, buttonWidth);
         ImGui::SameLine();
         DrawToolbarButton("Pause##Toolbar", EditorCommand::Pause, editorState, buttonWidth);
@@ -137,7 +246,6 @@ void DrawToolbarContent(EditorState& editorState)
         DrawToolbarButton("Stop##Toolbar", EditorCommand::Stop, editorState, buttonWidth);
         ImGui::SameLine();
         ImGui::Text("Mode: %s", modeText);
-        ImGui::Text("Selection: %d", editorState.selectedObjectIndex);
         return;
     }
 
@@ -149,13 +257,8 @@ void DrawToolbarContent(EditorState& editorState)
         ImGui::TableNextColumn();
         ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted("SDLTest 2D Editor");
-        if (width >= 1080.0f) {
-            ImGui::SameLine();
-            ImGui::TextDisabled("| Scene, Project, Inspector");
-        }
-        else {
-            ImGui::TextDisabled("Responsive workspace");
-        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("| Project-aware workspace");
 
         ImGui::TableNextColumn();
         const float controlsWidth = buttonWidth * 3.0f + ImGui::GetStyle().ItemSpacing.x * 2.0f;
@@ -170,9 +273,6 @@ void DrawToolbarContent(EditorState& editorState)
         ImGui::AlignTextToFramePadding();
         ImGui::Text("Mode: %s", modeText);
         ImGui::Text("Selection: %d", editorState.selectedObjectIndex);
-        if (width >= 1180.0f) {
-            ImGui::TextDisabled("Panels dock and scale with the window.");
-        }
         ImGui::EndTable();
     }
 }
@@ -186,6 +286,11 @@ void DrawEditorUI(SceneState& sceneState, EditorState& editorState, SDL_Texture*
     const float uiScale = GetUiScale(viewport);
     ImGui::GetIO().FontGlobalScale = uiScale;
     const float toolbarHeight = GetResponsiveToolbarHeight(viewport->Size.x, uiScale);
+
+    if (editorState.resetLayoutRequested) {
+        layout_initialized = false;
+        editorState.resetLayoutRequested = false;
+    }
 
     ImGuiWindowFlags window_flags =
         ImGuiWindowFlags_NoDocking |
@@ -201,7 +306,6 @@ void DrawEditorUI(SceneState& sceneState, EditorState& editorState, SDL_Texture*
     ImGui::SetNextWindowSize(ImVec2(viewport->Size.x, viewport->Size.y - toolbarHeight));
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-
     ImGui::Begin("DockSpace", &dockspaceOpen, window_flags);
 
     ImGuiID dockspace_id = ImGui::GetID("EditorDockspace");
@@ -216,7 +320,6 @@ void DrawEditorUI(SceneState& sceneState, EditorState& editorState, SDL_Texture*
         ImGui::DockBuilderSetNodeSize(dockspace_id, ImVec2(viewport->Size.x, viewport->Size.y - toolbarHeight));
 
         ImGuiID dock_main = dockspace_id;
-
         ImGuiID dock_left = ImGui::DockBuilderSplitNode(dock_main, ImGuiDir_Left, 0.16f, nullptr, &dock_main);
         ImGuiID dock_right = ImGui::DockBuilderSplitNode(dock_main, ImGuiDir_Right, 0.28f, nullptr, &dock_main);
         ImGuiID dock_bottom = ImGui::DockBuilderSplitNode(dock_main, ImGuiDir_Down, 0.24f, nullptr, &dock_main);
@@ -245,20 +348,21 @@ void DrawEditorUI(SceneState& sceneState, EditorState& editorState, SDL_Texture*
         ImGuiWindowFlags_NoTitleBar |
         ImGuiWindowFlags_NoResize |
         ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_MenuBar |
         ImGuiWindowFlags_NoDocking |
         ImGuiWindowFlags_NoBringToFrontOnFocus |
         ImGuiWindowFlags_NoNavFocus);
 
+    DrawToolbarMenuBar(sceneState, editorState);
     DrawToolbarContent(editorState);
-
     ImGui::End();
 
     ImGui::PopStyleColor();
     ImGui::PopStyleVar(2);
 
-    DrawHierarchyPanel(sceneState, editorState);
-    DrawScenePanel(sceneState, editorState, sceneTexture);
-    DrawInspectorPanel(sceneState, editorState);
-    DrawAssetPanel(sceneState, editorState);
-    DrawConsolePanel();
+    if (editorState.showHierarchy) DrawHierarchyPanel(sceneState, editorState);
+    if (editorState.showScene) DrawScenePanel(sceneState, editorState, sceneTexture);
+    if (editorState.showInspector) DrawInspectorPanel(sceneState, editorState);
+    if (editorState.showProject) DrawAssetPanel(sceneState, editorState);
+    if (editorState.showConsole) DrawConsolePanel(editorState);
 }

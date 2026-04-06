@@ -1,4 +1,5 @@
 #include "AssetPanel.h"
+#include "../EditorActions.h"
 #include "imgui.h"
 #include "../../../../backend/SceneSerializer.h"
 #include "../../../../backend/project/ProjectManager.h"
@@ -217,6 +218,33 @@ void EnsureBrowserState(BrowserState& state, const EditorState& editorState) {
     if (!state.selectedPath.empty() && !fs::exists(ResourcePathUtils::Utf8ToPath(state.selectedPath))) {
         state.selectedPath.clear();
     }
+}
+
+void ApplyFocusedAssetSelection(BrowserState& state, EditorState& editorState) {
+    if (editorState.focusAssetPath.empty()) {
+        return;
+    }
+
+    const AssetRecord* asset = editorState.assetRegistry.findByPath(editorState.focusAssetPath);
+    std::string resolvedPath = asset ? asset->sourcePath : editorState.focusAssetPath;
+    if (resolvedPath.empty()) {
+        editorState.focusAssetPath.clear();
+        return;
+    }
+
+    resolvedPath = NormalizePath(ResourcePathUtils::Utf8ToPath(resolvedPath));
+    std::error_code ec;
+    const fs::path resolvedFsPath = ResourcePathUtils::Utf8ToPath(resolvedPath);
+    if (!fs::exists(resolvedFsPath, ec)) {
+        editorState.focusAssetPath.clear();
+        return;
+    }
+
+    state.selectedPath = resolvedPath;
+    state.currentDirectory = fs::is_directory(resolvedFsPath, ec)
+        ? resolvedPath
+        : NormalizePath(resolvedFsPath.parent_path());
+    editorState.focusAssetPath.clear();
 }
 
 bool LoadTextFile(const std::string& path, std::vector<char>& buffer) {
@@ -479,11 +507,12 @@ void CreateItemAndStartRename(BrowserState& state, EditorState& editorState, int
 
 void DrawAssetPanel(SceneState& sceneState, EditorState& editorState)
 {
-    ImGui::Begin("Project");
+    ImGui::Begin("Project", &editorState.showProject);
 
     static char projectNameBuffer[128] = "MyProject";
     static BrowserState browserState;
     EnsureBrowserState(browserState, editorState);
+    ApplyFocusedAssetSelection(browserState, editorState);
     const bool hasProject = !editorState.projectRootPath.empty();
 
     ImGui::TextUnformatted("Project Browser");
@@ -840,8 +869,27 @@ void DrawAssetPanel(SceneState& sceneState, EditorState& editorState)
             const AssetRecord* asset = editorState.assetRegistry.findByPath(browserState.selectedPath);
             if (asset != nullptr) {
                 ImGui::Text("Asset Type: %s", asset->typeName.c_str());
+                int usageCount = 0;
+                for (const GameObject& object : sceneState.objects) {
+                    if (object.textureResourceId == asset->id ||
+                        object.scriptResourceId == asset->id ||
+                        object.texturePath == asset->sourcePath ||
+                        (!asset->relativePath.empty() && object.texturePath == asset->relativePath) ||
+                        object.scriptPath == asset->sourcePath) {
+                        ++usageCount;
+                    }
+                }
+                ImGui::Text("Used By Objects: %d", usageCount);
                 if (asset->type == AssetType::Texture && ImGui::Button("Bind Texture To Selected Object")) {
                     AssignAssetToSelection(sceneState, editorState, *asset);
+                }
+                if (asset->type == AssetType::Texture) {
+                    ImGui::SameLine();
+                    if (ImGui::Button("Create Sprite In Scene")) {
+                        const float x = 80.0f + 24.0f * static_cast<float>(sceneState.objects.size() % 8);
+                        const float y = 80.0f + 24.0f * static_cast<float>(sceneState.objects.size() % 6);
+                        CreateObjectFromAsset(sceneState, editorState, *asset, x, y, "Project panel");
+                    }
                 }
                 if (asset->type == AssetType::Script && ImGui::Button("Bind Script To Selected Object")) {
                     const int index = editorState.selectedObjectIndex;
@@ -849,8 +897,10 @@ void DrawAssetPanel(SceneState& sceneState, EditorState& editorState)
                         sceneState.objects[index].scriptResourceId = asset->id;
                         sceneState.objects[index].scriptPath = asset->sourcePath;
                         editorState.assetStatus = "Bound script: " + asset->name;
+                        AddEditorLog(editorState, EditorLogLevel::Info, editorState.assetStatus);
                     } else {
                         editorState.assetStatus = "Select an object before binding a script";
+                        AddEditorLog(editorState, EditorLogLevel::Warning, editorState.assetStatus);
                     }
                 }
             }

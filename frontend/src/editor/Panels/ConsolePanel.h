@@ -1,5 +1,4 @@
 #pragma once
-#include "../../../backend/core/SceneState.h"
 #include "../../EditorState.h"
 
-void DrawConsolePanel();
+void DrawConsolePanel(EditorState& editorState);

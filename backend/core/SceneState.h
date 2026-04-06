@@ -9,8 +9,11 @@ struct GameObject {
     std::string name;
     float position[2];
     float scale[2];
+    float rotation = 0.0f;
     std::uint64_t textureResourceId = 0;
     std::string texturePath;
+    std::uint64_t scriptResourceId = 0;
+    std::string scriptPath;
 };
 
 struct SceneState {

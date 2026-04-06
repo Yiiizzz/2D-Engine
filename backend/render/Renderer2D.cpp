@@ -74,7 +74,7 @@ void Renderer2D::renderScene(const SceneState& sceneState, ResourceManager& reso
     }
 
     SDL_SetRenderTarget(renderer, sceneRenderTarget);
-    SDL_SetRenderDrawColor(renderer, 30, 30, 35, 255);
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
 
     for (const auto& obj : sceneState.objects) {
@@ -87,7 +87,7 @@ void Renderer2D::renderScene(const SceneState& sceneState, ResourceManager& reso
         dst.w = 64.0f * obj.scale[0];
         dst.h = 64.0f * obj.scale[1];
 
-        SDL_RenderTexture(renderer, texture, nullptr, &dst);
+        SDL_RenderTextureRotated(renderer, texture, nullptr, &dst, static_cast<double>(obj.rotation), nullptr, SDL_FLIP_NONE);
     }
 
     SDL_SetRenderTarget(renderer, nullptr);

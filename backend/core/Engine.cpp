@@ -38,14 +38,8 @@ bool Engine::init() {
     const std::uint64_t defaultTextureId = defaultTexture ? defaultTexture->id : 0;
     const std::string defaultTexturePath =
         defaultTexture && !defaultTexture->relativePath.empty() ? defaultTexture->relativePath : "pillar.png";
-    sceneState.objects.push_back({ 0, "Player", {100.0f, 100.0f}, {1.0f, 1.0f}, defaultTextureId, defaultTexturePath });
-    sceneState.objects.push_back({ 1, "Enemy", {300.0f, 200.0f}, {1.0f, 1.0f}, defaultTextureId, defaultTexturePath });
-    sceneState.objects.push_back({ 0, "Player", {100.0f, 100.0f}, {1.0f, 1.0f}, 0, "pillar.png" });
-    sceneState.objects.push_back({ 1, "Enemy", {300.0f, 200.0f}, {1.0f, 1.0f}, 0, "pillar.png" });
->>>>>>>>> Temporary merge branch 2
-    sceneState.objects.push_back({ 0, "Player", {100.0f, 100.0f}, {1.0f, 1.0f}, 0, "pillar.png" });
-    sceneState.objects.push_back({ 1, "Enemy", {300.0f, 200.0f}, {1.0f, 1.0f}, 0, "pillar.png" });
->>>>>>>>> Temporary merge branch 2
+    sceneState.objects.push_back({ 0, "Player", {100.0f, 100.0f}, {1.0f, 1.0f}, 0.0f, defaultTextureId, defaultTexturePath, 0, "" });
+    sceneState.objects.push_back({ 1, "Enemy", {300.0f, 200.0f}, {1.0f, 1.0f}, 0.0f, defaultTextureId, defaultTexturePath, 0, "" });
     editorState.selectedObjectIndex = 0;
     editorState.assetStatus = "Create or open a project to import and persist project assets";
     editorState.sceneFilePath.clear();
@@ -113,6 +107,7 @@ bool Engine::openProject(const ProjectDescriptor& project) {
     editorState.assetManifestPath = project.assetManifestPath;
     editorState.sceneFilePath = project.defaultScenePath;
     editorState.assetRegistry.clear();
+    editorState.assetRegistry.setProjectRoot(project.rootPath);
     editorState.assetRegistry.setProjectAssetRoot(project.assetRootPath);
 
     const bool loadedManifest = editorState.assetRegistry.loadManifest(project.assetManifestPath);
@@ -156,13 +151,17 @@ void Engine::clearMissingAssetReferences(const std::vector<AssetRecord>& removed
         }
 
         for (GameObject& object : sceneState.objects) {
-            if (object.textureResourceId != removedAsset.id) {
-                continue;
+            if (object.textureResourceId == removedAsset.id) {
+                object.textureResourceId = 0;
+                object.texturePath.clear();
+                ++clearedBindings;
             }
 
-            object.textureResourceId = 0;
-            object.texturePath.clear();
-            ++clearedBindings;
+            if (object.scriptResourceId == removedAsset.id) {
+                object.scriptResourceId = 0;
+                object.scriptPath.clear();
+                ++clearedBindings;
+            }
         }
     }
 
@@ -267,13 +266,13 @@ void Engine::run() {
         ImGui::NewFrame();
 
         // 5. 逻辑更新
-        // 5. 逻辑更新
+        renderer2D.clear();
+        DrawEditorUI(sceneState, editorState, renderer2D.getSceneRenderTarget());
+
         handleEditorCommands();
         handleProjectCommands();
         syncProjectAssets();
-        handleProjectCommands();
-        syncProjectAssets();
->>>>>>>>> Temporary merge branch 2
+
         gameLoop.update(sceneState, editorState);
 
         renderer2D.resizeSceneRenderTarget(

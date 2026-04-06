@@ -41,6 +41,7 @@ add_executable(SDLTest
     backend/input/InputManager.cpp
     backend/core/GameLoop.cpp
     backend/project/ProjectManager.cpp
+    backend/script/ScriptRuntime.cpp
     backend/resource/ResourceManager.cpp
     backend/resource/AssetRegistry.cpp
     backend/resource/ResourcePathUtils.cpp

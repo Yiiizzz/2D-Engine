@@ -13,6 +13,14 @@
 namespace fs = std::filesystem;
 using json = nlohmann::json;
 
+namespace {
+
+bool shouldIgnoreProjectFile(const std::string& normalizedPath) {
+    return normalizedPath.find("/Library/ScriptCache/") != std::string::npos;
+}
+
+}
+
 AssetRegistry::AssetRegistry() = default;
 
 void AssetRegistry::clear() {
@@ -22,6 +30,16 @@ void AssetRegistry::clear() {
     idToIndex_.clear();
     lastImportedFolder_.clear();
     lastError_.clear();
+}
+
+void AssetRegistry::setProjectRoot(const std::string& folderPath) {
+    if (!folderPath.empty()) {
+        projectRoot_ = normalizePath(folderPath);
+    }
+}
+
+const std::string& AssetRegistry::getProjectRoot() const {
+    return projectRoot_;
 }
 
 void AssetRegistry::setProjectAssetRoot(const std::string& folderPath) {
@@ -115,6 +133,11 @@ std::size_t AssetRegistry::importFolderToProject(const std::string& folderPath) 
             continue;
         }
 
+        const std::string normalizedFile = normalizePath(it->path().string());
+        if (shouldIgnoreProjectFile(normalizedFile)) {
+            continue;
+        }
+
         std::string filename = it->path().filename().string();
         std::string extension = it->path().extension().string();
         std::transform(extension.begin(), extension.end(), extension.begin(),
@@ -179,6 +202,9 @@ bool AssetRegistry::loadManifest(const std::string& manifestPath) {
     if (data.contains("projectAssetRoot")) {
         setProjectAssetRoot(data.value("projectAssetRoot", projectAssetRoot_));
     }
+    if (data.contains("projectRoot")) {
+        setProjectRoot(data.value("projectRoot", projectRoot_));
+    }
     nextId_ = data.value("nextId", static_cast<std::uint64_t>(1));
 
     if (data.contains("assets") && data["assets"].is_array()) {
@@ -193,6 +219,7 @@ bool AssetRegistry::loadManifest(const std::string& manifestPath) {
             else if (record.typeName == "Audio") record.type = AssetType::Audio;
             else if (record.typeName == "Text") record.type = AssetType::Text;
             else if (record.typeName == "Scene") record.type = AssetType::Scene;
+            else if (record.typeName == "Script") record.type = AssetType::Script;
             else record.type = AssetType::Unknown;
 
             if (!record.sourcePath.empty()) {
@@ -208,6 +235,7 @@ bool AssetRegistry::loadManifest(const std::string& manifestPath) {
 bool AssetRegistry::saveManifest(const std::string& manifestPath) const {
     json data;
     data["projectAssetRoot"] = projectAssetRoot_;
+    data["projectRoot"] = projectRoot_;
     data["nextId"] = nextId_;
     data["assets"] = json::array();
 
@@ -239,7 +267,7 @@ bool AssetRegistry::saveManifest(const std::string& manifestPath) const {
 std::size_t AssetRegistry::rebuildFromProjectAssets() {
     lastError_.clear();
 
-    const std::string root = normalizePath(projectAssetRoot_);
+    const std::string root = normalizePath(projectRoot_.empty() ? projectAssetRoot_ : projectRoot_);
     std::error_code ec;
     if (!fs::exists(root, ec)) {
         return 0;
@@ -263,6 +291,11 @@ std::size_t AssetRegistry::rebuildFromProjectAssets() {
             continue;
         }
 
+        const std::string normalizedFile = normalizePath(it->path().string());
+        if (shouldIgnoreProjectFile(normalizedFile)) {
+            continue;
+        }
+
         std::string filename = it->path().filename().string();
         std::string extension = it->path().extension().string();
         std::transform(extension.begin(), extension.end(), extension.begin(),
@@ -272,7 +305,7 @@ std::size_t AssetRegistry::rebuildFromProjectAssets() {
             continue;
         }
 
-        if (registerResolvedFile(it->path().string()) != 0) {
+        if (registerResolvedFile(normalizedFile) != 0) {
             ++importedCount;
         }
     }
@@ -284,7 +317,7 @@ AssetSyncSummary AssetRegistry::synchronizeProjectAssets() {
     AssetSyncSummary summary;
     lastError_.clear();
 
-    const std::string root = normalizePath(projectAssetRoot_);
+    const std::string root = normalizePath(projectRoot_.empty() ? projectAssetRoot_ : projectRoot_);
     std::error_code ec;
     if (!fs::exists(root, ec) || !fs::is_directory(root, ec)) {
         if (!assets_.empty()) {
@@ -314,6 +347,11 @@ AssetSyncSummary AssetRegistry::synchronizeProjectAssets() {
             continue;
         }
 
+        const std::string normalizedFile = normalizePath(it->path().string());
+        if (shouldIgnoreProjectFile(normalizedFile)) {
+            continue;
+        }
+
         std::string filename = it->path().filename().string();
         std::string extension = it->path().extension().string();
         std::transform(extension.begin(), extension.end(), extension.begin(),
@@ -323,7 +361,7 @@ AssetSyncSummary AssetRegistry::synchronizeProjectAssets() {
             continue;
         }
 
-        discoveredFiles.push_back(normalizePath(it->path().string()));
+        discoveredFiles.push_back(normalizedFile);
     }
 
     std::sort(discoveredFiles.begin(), discoveredFiles.end());
@@ -427,6 +465,10 @@ AssetType AssetRegistry::detectAssetType(const std::string& extension) const {
         return AssetType::Scene;
     }
 
+    if (extension == ".cpp" || extension == ".hpp" || extension == ".h" || extension == ".cc") {
+        return AssetType::Script;
+    }
+
     return AssetType::Unknown;
 }
 
@@ -448,7 +490,7 @@ std::string AssetRegistry::buildRelativePath(const std::string& absolutePath) co
 std::string AssetRegistry::buildProjectRelativePath(const std::string& absolutePath) const {
     std::error_code ec;
     const fs::path target = ResourcePathUtils::Utf8ToPath(absolutePath);
-    const fs::path projectRoot = ResourcePathUtils::Utf8ToPath(projectAssetRoot_);
+    const fs::path projectRoot = ResourcePathUtils::Utf8ToPath(projectRoot_.empty() ? projectAssetRoot_ : projectRoot_);
     const fs::path relative = fs::relative(target, projectRoot, ec);
     if (!ec && !relative.empty()) {
         return relative.generic_string();
@@ -513,6 +555,9 @@ std::uint64_t AssetRegistry::registerResolvedFile(const std::string& filePath) {
     lastError_.clear();
 
     const std::string normalizedPath = normalizePath(filePath);
+    if (shouldIgnoreProjectFile(normalizedPath)) {
+        return 0;
+    }
     const fs::path absolutePath = ResourcePathUtils::Utf8ToPath(normalizedPath);
     std::error_code ec;
     if (!fs::exists(absolutePath, ec) || !fs::is_regular_file(absolutePath, ec)) {
@@ -585,6 +630,8 @@ std::string AssetRegistry::assetTypeToString(AssetType type) {
         return "Text";
     case AssetType::Scene:
         return "Scene";
+    case AssetType::Script:
+        return "Script";
     case AssetType::Unknown:
     default:
         return "Unknown";

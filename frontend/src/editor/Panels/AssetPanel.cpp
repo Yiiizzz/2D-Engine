@@ -1,167 +1,334 @@
 #include "AssetPanel.h"
 #include "imgui.h"
+#include "../../../../backend/SceneSerializer.h"
 #include "../../../../backend/project/ProjectManager.h"
+#include "../../../../backend/resource/ResourcePathUtils.h"
 
 #ifdef _WIN32
 #include <windows.h>
 #include <shobjidl.h>
 #endif
 
+#include <algorithm>
+#include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 
+namespace fs = std::filesystem;
+
 namespace {
+
+constexpr std::size_t kEditorBufferSize = 64 * 1024;
+
+struct BrowserState {
+    std::string projectRoot;
+    std::string currentDirectory;
+    std::string selectedPath;
+    std::string loadedTextPath;
+    std::vector<char> textBuffer = std::vector<char>(kEditorBufferSize, '\0');
+    bool textDirty = false;
+    std::string pendingCreateDirectory;
+    std::string pendingDeletePath;
+    std::string pendingRenamePath;
+    bool openRenamePopup = false;
+    char createItemName[128] = "NewItem";
+    int createItemTypeIndex = 1;
+    char renameItemName[128] = "";
+};
 
 #ifdef _WIN32
 std::string WideToUtf8(const std::wstring& value) {
-    if (value.empty()) {
-        return {};
-    }
-
+    if (value.empty()) return {};
     const int size = WideCharToMultiByte(CP_UTF8, 0, value.c_str(), -1, nullptr, 0, nullptr, nullptr);
-    if (size <= 1) {
-        return {};
-    }
-
+    if (size <= 1) return {};
     std::string result(static_cast<std::size_t>(size - 1), '\0');
     WideCharToMultiByte(CP_UTF8, 0, value.c_str(), -1, result.data(), size - 1, nullptr, nullptr);
     return result;
 }
 
 std::vector<std::string> PickFilesFromNativeDialog() {
-    std::vector<std::string> filePaths;
-
+    std::vector<std::string> paths;
     HRESULT initResult = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
     const bool shouldUninitialize = SUCCEEDED(initResult);
-
     IFileOpenDialog* dialog = nullptr;
     HRESULT result = CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_ALL, IID_PPV_ARGS(&dialog));
     if (FAILED(result) || dialog == nullptr) {
-        if (shouldUninitialize) {
-            CoUninitialize();
-        }
-        return filePaths;
+        if (shouldUninitialize) CoUninitialize();
+        return paths;
     }
 
     DWORD options = 0;
     dialog->GetOptions(&options);
     dialog->SetOptions(options | FOS_ALLOWMULTISELECT | FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST);
-    dialog->SetTitle(L"Import Image Files");
-
-    COMDLG_FILTERSPEC filters[] = {
-        { L"Image Files", L"*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tga;*.webp" },
-        { L"All Files", L"*.*" }
-    };
-    dialog->SetFileTypes(2, filters);
-
+    dialog->SetTitle(L"Import Project Files");
     result = dialog->Show(nullptr);
-    if (FAILED(result)) {
-        dialog->Release();
-        if (shouldUninitialize) {
-            CoUninitialize();
-        }
-        return filePaths;
-    }
-
-    IShellItemArray* items = nullptr;
-    result = dialog->GetResults(&items);
-    if (SUCCEEDED(result) && items != nullptr) {
-        DWORD count = 0;
-        items->GetCount(&count);
-        for (DWORD i = 0; i < count; ++i) {
-            IShellItem* item = nullptr;
-            if (SUCCEEDED(items->GetItemAt(i, &item)) && item != nullptr) {
-                PWSTR path = nullptr;
-                if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &path)) && path != nullptr) {
-                    filePaths.push_back(WideToUtf8(path));
-                    CoTaskMemFree(path);
+    if (SUCCEEDED(result)) {
+        IShellItemArray* items = nullptr;
+        if (SUCCEEDED(dialog->GetResults(&items)) && items != nullptr) {
+            DWORD count = 0;
+            items->GetCount(&count);
+            for (DWORD i = 0; i < count; ++i) {
+                IShellItem* item = nullptr;
+                if (SUCCEEDED(items->GetItemAt(i, &item)) && item != nullptr) {
+                    PWSTR path = nullptr;
+                    if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &path)) && path != nullptr) {
+                        paths.push_back(WideToUtf8(path));
+                        CoTaskMemFree(path);
+                    }
+                    item->Release();
                 }
-                item->Release();
             }
+            items->Release();
         }
-        items->Release();
     }
 
     dialog->Release();
-    if (shouldUninitialize) {
-        CoUninitialize();
-    }
-
-    return filePaths;
+    if (shouldUninitialize) CoUninitialize();
+    return paths;
 }
 
 bool PickFolderFromNativeDialog(std::string& folderPath) {
+    folderPath.clear();
     HRESULT initResult = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
     const bool shouldUninitialize = SUCCEEDED(initResult);
-
     IFileOpenDialog* dialog = nullptr;
     HRESULT result = CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_ALL, IID_PPV_ARGS(&dialog));
     if (FAILED(result) || dialog == nullptr) {
-        if (shouldUninitialize) {
-            CoUninitialize();
-        }
+        if (shouldUninitialize) CoUninitialize();
         return false;
     }
 
     DWORD options = 0;
     dialog->GetOptions(&options);
     dialog->SetOptions(options | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST);
-    dialog->SetTitle(L"Import Asset Folder");
-
     result = dialog->Show(nullptr);
-    if (FAILED(result)) {
-        dialog->Release();
-        if (shouldUninitialize) {
-            CoUninitialize();
+    if (SUCCEEDED(result)) {
+        IShellItem* item = nullptr;
+        if (SUCCEEDED(dialog->GetResult(&item)) && item != nullptr) {
+            PWSTR path = nullptr;
+            if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &path)) && path != nullptr) {
+                folderPath = WideToUtf8(path);
+                CoTaskMemFree(path);
+            }
+            item->Release();
         }
-        return false;
-    }
-
-    IShellItem* item = nullptr;
-    result = dialog->GetResult(&item);
-    if (SUCCEEDED(result) && item != nullptr) {
-        PWSTR path = nullptr;
-        result = item->GetDisplayName(SIGDN_FILESYSPATH, &path);
-        if (SUCCEEDED(result) && path != nullptr) {
-            folderPath = WideToUtf8(path);
-            CoTaskMemFree(path);
-        }
-        item->Release();
     }
 
     dialog->Release();
-    if (shouldUninitialize) {
-        CoUninitialize();
-    }
-
+    if (shouldUninitialize) CoUninitialize();
     return !folderPath.empty();
 }
 #else
-std::vector<std::string> PickFilesFromNativeDialog() {
-    return {};
+std::vector<std::string> PickFilesFromNativeDialog() { return {}; }
+bool PickFolderFromNativeDialog(std::string& folderPath) { folderPath.clear(); return false; }
+#endif
+
+std::string NormalizePath(const fs::path& path) {
+    return ResourcePathUtils::NormalizePathString(path);
 }
 
-bool PickFolderFromNativeDialog(std::string& folderPath) {
-    folderPath.clear();
-    return false;
+ProjectDescriptor BuildProjectDescriptor(const EditorState& editorState) {
+    ProjectDescriptor project;
+    project.name = editorState.projectName;
+    project.rootPath = editorState.projectRootPath;
+    project.assetRootPath = editorState.assetRegistry.getProjectAssetRoot();
+    project.assetManifestPath = editorState.assetManifestPath;
+    project.defaultScenePath = editorState.sceneFilePath;
+    project.projectFilePath = editorState.projectFilePath;
+    return project;
 }
-#endif
+
+ProjectItemType ToProjectItemType(int index) {
+    if (index == 0) return ProjectItemType::Audio;
+    if (index == 2) return ProjectItemType::Text;
+    if (index == 3) return ProjectItemType::Scene;
+    if (index == 4) return ProjectItemType::Script;
+    return ProjectItemType::Image;
+}
+
+const char* ProjectItemTypeLabel(int index) {
+    if (index == 0) return "Audio";
+    if (index == 2) return "Text";
+    if (index == 3) return "Scene";
+    if (index == 4) return "C++ Script";
+    return "Image";
+}
+
+bool IsSceneFile(const fs::path& path) {
+    const std::string name = path.filename().generic_string();
+    return name.size() >= 11 && name.substr(name.size() - 11) == ".scene.json";
+}
+
+bool IsTextEditable(const fs::path& path) {
+    const std::string ext = path.extension().generic_string();
+    return IsSceneFile(path) || ext == ".txt" || ext == ".json" || ext == ".md" || ext == ".ini" || ext == ".cpp" || ext == ".h" || ext == ".hpp";
+}
+
+std::string RelativeToProject(const EditorState& editorState, const fs::path& path) {
+    std::error_code ec;
+    const fs::path relative = fs::relative(path, ResourcePathUtils::Utf8ToPath(editorState.projectRootPath), ec);
+    return ec ? path.filename().generic_string() : relative.generic_string();
+}
+
+void ResetBrowserState(BrowserState& state, const EditorState& editorState) {
+    state.projectRoot = editorState.projectRootPath;
+    state.currentDirectory = editorState.projectRootPath;
+    state.selectedPath.clear();
+    state.loadedTextPath.clear();
+    std::fill(state.textBuffer.begin(), state.textBuffer.end(), '\0');
+    state.textDirty = false;
+    state.pendingCreateDirectory.clear();
+    state.pendingDeletePath.clear();
+    state.pendingRenamePath.clear();
+    state.openRenamePopup = false;
+    std::strcpy(state.createItemName, "NewItem");
+    state.createItemTypeIndex = 1;
+    state.renameItemName[0] = '\0';
+}
+
+void EnsureBrowserState(BrowserState& state, const EditorState& editorState) {
+    if (state.projectRoot != editorState.projectRootPath) ResetBrowserState(state, editorState);
+    if (!state.currentDirectory.empty() && !fs::exists(ResourcePathUtils::Utf8ToPath(state.currentDirectory))) {
+        state.currentDirectory = editorState.projectRootPath;
+    }
+    if (!state.selectedPath.empty() && !fs::exists(ResourcePathUtils::Utf8ToPath(state.selectedPath))) {
+        state.selectedPath.clear();
+    }
+}
+
+bool LoadTextFile(const std::string& path, std::vector<char>& buffer) {
+    std::ifstream file(ResourcePathUtils::Utf8ToPath(path), std::ios::binary);
+    if (!file.is_open()) return false;
+    std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    if (content.size() >= buffer.size()) content.resize(buffer.size() - 1);
+    std::fill(buffer.begin(), buffer.end(), '\0');
+    std::memcpy(buffer.data(), content.data(), content.size());
+    return true;
+}
+
+bool SaveTextFile(const std::string& path, const std::vector<char>& buffer) {
+    std::ofstream file(ResourcePathUtils::Utf8ToPath(path), std::ios::binary | std::ios::trunc);
+    if (!file.is_open()) return false;
+    file.write(buffer.data(), static_cast<std::streamsize>(std::strlen(buffer.data())));
+    return true;
+}
 
 void AssignAssetToSelection(SceneState& sceneState, EditorState& editorState, const AssetRecord& asset) {
     const int index = editorState.selectedObjectIndex;
     const bool hasSelection = (index >= 0 && index < static_cast<int>(sceneState.objects.size()));
     if (!hasSelection) {
+        editorState.assetStatus = "Select an object before binding a texture";
         return;
     }
-
     if (asset.type != AssetType::Texture) {
         editorState.assetStatus = "Only texture assets can be bound to scene objects";
         return;
     }
-
     sceneState.objects[index].textureResourceId = asset.id;
     sceneState.objects[index].texturePath = !asset.relativePath.empty() ? asset.relativePath : asset.sourcePath;
+    editorState.assetStatus = "Bound texture: " + asset.name;
+}
+
+bool OpenScene(SceneState& sceneState, EditorState& editorState, const std::string& path) {
+    std::string sceneName;
+    if (!LoadSceneFromFile(sceneState, editorState, sceneName, path)) {
+        editorState.projectStatus = "Failed to open scene: " + path;
+        return false;
+    }
+    editorState.sceneFilePath = path;
+    editorState.projectStatus = "Opened scene: " + sceneName;
+    return true;
+}
+
+void QueueRenameForPath(BrowserState& state, const std::string& path);
+void CreateItemAndStartRename(BrowserState& state, EditorState& editorState, int typeIndex, const std::string& directory);
+
+void DrawFolderTree(const fs::path& directory, BrowserState& state, EditorState& editorState) {
+    std::vector<fs::path> children;
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator(directory, fs::directory_options::skip_permission_denied, ec)) {
+        if (ec) {
+            ec.clear();
+            continue;
+        }
+        if (entry.is_directory()) children.push_back(entry.path());
+    }
+    std::sort(children.begin(), children.end());
+    for (const fs::path& child : children) {
+        const std::string childPath = NormalizePath(child);
+        ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick;
+        if (state.currentDirectory == childPath) flags |= ImGuiTreeNodeFlags_Selected;
+        const bool open = ImGui::TreeNodeEx(childPath.c_str(), flags, "%s", child.filename().generic_string().c_str());
+        if (ImGui::IsItemClicked()) {
+            state.currentDirectory = childPath;
+            state.selectedPath = childPath;
+        }
+        if (ImGui::BeginPopupContextItem()) {
+            if (ImGui::BeginMenu("Create Item")) {
+                if (ImGui::MenuItem("Audio")) {
+                    CreateItemAndStartRename(state, editorState, 0, childPath);
+                }
+                if (ImGui::MenuItem("Image")) {
+                    CreateItemAndStartRename(state, editorState, 1, childPath);
+                }
+                if (ImGui::MenuItem("Text")) {
+                    CreateItemAndStartRename(state, editorState, 2, childPath);
+                }
+                if (ImGui::MenuItem("Scene")) {
+                    CreateItemAndStartRename(state, editorState, 3, childPath);
+                }
+                if (ImGui::MenuItem("C++ Script")) {
+                    CreateItemAndStartRename(state, editorState, 4, childPath);
+                }
+                ImGui::EndMenu();
+            }
+            if (ImGui::MenuItem("Rename")) {
+                QueueRenameForPath(state, childPath);
+            }
+            ImGui::EndPopup();
+        }
+        if (open) {
+            DrawFolderTree(child, state, editorState);
+            ImGui::TreePop();
+        }
+    }
+}
+
+void QueueRenameForPath(BrowserState& state, const std::string& path) {
+    state.pendingRenamePath = path;
+    const fs::path filePath = ResourcePathUtils::Utf8ToPath(path);
+    std::string baseName;
+    const std::string filename = filePath.filename().string();
+    if (IsSceneFile(filePath)) {
+        baseName = filename.substr(0, filename.size() - 11);
+    } else {
+        baseName = filePath.stem().string();
+    }
+    std::strncpy(state.renameItemName, baseName.c_str(), sizeof(state.renameItemName));
+    state.renameItemName[sizeof(state.renameItemName) - 1] = '\0';
+    state.openRenamePopup = true;
+}
+
+void CreateItemAndStartRename(BrowserState& state, EditorState& editorState, int typeIndex, const std::string& directory) {
+    std::string createdPath;
+    std::string error;
+    if (ProjectManager::CreateProjectItemInDirectory(
+        BuildProjectDescriptor(editorState),
+        directory,
+        ToProjectItemType(typeIndex),
+        "NewItem",
+        createdPath,
+        error)) {
+        editorState.assetStatus = "Created: " + createdPath;
+        editorState.pendingProjectCommand = ProjectCommand::Sync;
+        state.selectedPath = createdPath;
+        state.currentDirectory = directory;
+        QueueRenameForPath(state, createdPath);
+    } else {
+        editorState.assetStatus = error.empty() ? "Failed to create item" : error;
+    }
 }
 
 }  // namespace
@@ -170,16 +337,14 @@ void DrawAssetPanel(SceneState& sceneState, EditorState& editorState)
 {
     ImGui::Begin("Project");
 
-    static char filterBuffer[96] = "";
     static char projectNameBuffer[128] = "MyProject";
-    static char createItemNameBuffer[128] = "NewAsset";
-    static int createItemTypeIndex = 1;
+    static BrowserState browserState;
+    EnsureBrowserState(browserState, editorState);
     const bool hasProject = !editorState.projectRootPath.empty();
 
-    ImGui::TextUnformatted("Project Assets");
-    ImGui::TextWrapped("Create or open a project folder, import textures into the project library, and keep editor state synced with disk.");
+    ImGui::TextUnformatted("Project Browser");
+    ImGui::TextWrapped("Open a project, browse folders, right click to create or delete files, and double click scene files to switch scenes.");
     ImGui::Separator();
-
     ImGui::InputText("Project Name", projectNameBuffer, sizeof(projectNameBuffer));
 
     if (ImGui::Button("New Project")) {
@@ -189,11 +354,7 @@ void DrawAssetPanel(SceneState& sceneState, EditorState& editorState)
             editorState.pendingProjectDirectory = folderPath;
             editorState.pendingProjectCommand = ProjectCommand::Create;
         }
-        else {
-            editorState.projectStatus = "Project creation canceled";
-        }
     }
-
     ImGui::SameLine();
     if (ImGui::Button("Open Project")) {
         std::string folderPath;
@@ -201,193 +362,306 @@ void DrawAssetPanel(SceneState& sceneState, EditorState& editorState)
             editorState.pendingProjectDirectory = folderPath;
             editorState.pendingProjectCommand = ProjectCommand::Open;
         }
-        else {
-            editorState.projectStatus = "Open project canceled";
-        }
     }
-
     ImGui::SameLine();
     if (ImGui::Button("Sync Files")) {
         editorState.pendingProjectCommand = ProjectCommand::Sync;
     }
 
     ImGui::TextWrapped("Project Status: %s", editorState.projectStatus.c_str());
-    if (hasProject) {
-        ImGui::TextWrapped("Project Root: %s", editorState.projectRootPath.c_str());
-    }
-
-    ImGui::Separator();
-
-    if (hasProject) {
-        const char* itemTypes[] = { "Audio", "Image", "Text", "Scene" };
-        ImGui::InputText("New Item Name", createItemNameBuffer, sizeof(createItemNameBuffer));
-        ImGui::Combo("New Item Type", &createItemTypeIndex, itemTypes, IM_ARRAYSIZE(itemTypes));
-        if (ImGui::Button("Create Item")) {
-            ProjectDescriptor project;
-            project.name = editorState.projectName;
-            project.rootPath = editorState.projectRootPath;
-            project.assetRootPath = editorState.assetRegistry.getProjectAssetRoot();
-            project.assetManifestPath = editorState.assetManifestPath;
-            project.defaultScenePath = editorState.sceneFilePath;
-            project.projectFilePath = editorState.projectFilePath;
-
-            ProjectItemType type = ProjectItemType::Image;
-            if (createItemTypeIndex == 0) type = ProjectItemType::Audio;
-            else if (createItemTypeIndex == 1) type = ProjectItemType::Image;
-            else if (createItemTypeIndex == 2) type = ProjectItemType::Text;
-            else if (createItemTypeIndex == 3) type = ProjectItemType::Scene;
-
-            std::string createdPath;
-            std::string error;
-            if (ProjectManager::CreateProjectItem(project, type, createItemNameBuffer, createdPath, error)) {
-                editorState.assetStatus = "Created project item: " + createdPath;
-                editorState.pendingProjectCommand = ProjectCommand::Sync;
-            }
-            else {
-                editorState.assetStatus = error.empty() ? "Failed to create project item" : error;
-            }
-        }
-        ImGui::Separator();
-    }
-
-    int index = editorState.selectedObjectIndex;
-    bool hasSelection = (index >= 0 && index < static_cast<int>(sceneState.objects.size()));
-    const float width = ImGui::GetContentRegionAvail().x;
-    const bool compact = width < 760.0f;
-
     if (!hasProject) {
-        ImGui::BeginDisabled();
+        ImGui::TextWrapped("Load a project first to browse its directory.");
+        ImGui::End();
+        return;
     }
 
-    if (ImGui::Button("Import Images")) {
+    if (ImGui::Button("Import Files")) {
         const std::vector<std::string> filePaths = PickFilesFromNativeDialog();
         if (!filePaths.empty()) {
             const std::size_t importedCount = editorState.assetRegistry.importFilesToProject(filePaths);
-            if (importedCount > 0) {
-                editorState.assetRegistry.saveManifest(editorState.assetManifestPath);
-                editorState.assetStatus =
-                    "Imported " + std::to_string(importedCount) + " image(s) into project assets";
-            } else {
-                editorState.assetStatus = editorState.assetRegistry.getLastError();
-            }
-        } else {
-            editorState.assetStatus = "Image import canceled";
+            editorState.assetRegistry.saveManifest(editorState.assetManifestPath);
+            editorState.assetStatus = importedCount > 0
+                ? "Imported " + std::to_string(importedCount) + " file(s)"
+                : editorState.assetRegistry.getLastError();
+            editorState.pendingProjectCommand = ProjectCommand::Sync;
         }
     }
-
-    if (!compact) ImGui::SameLine();
+    ImGui::SameLine();
     if (ImGui::Button("Import Folder")) {
         std::string folderPath;
         if (PickFolderFromNativeDialog(folderPath)) {
             const std::size_t importedCount = editorState.assetRegistry.importFolderToProject(folderPath);
-            if (importedCount > 0) {
-                editorState.assetRegistry.saveManifest(editorState.assetManifestPath);
-                editorState.assetStatus =
-                    "Imported " + std::to_string(importedCount) + " asset(s) into project from " + folderPath;
-            }
-            else {
-                const std::string& error = editorState.assetRegistry.getLastError();
-                editorState.assetStatus = error.empty()
-                    ? "Selected folder contains no new supported asset files"
-                    : error;
-            }
-        }
-        else {
-            editorState.assetStatus = "Import canceled";
+            editorState.assetRegistry.saveManifest(editorState.assetManifestPath);
+            editorState.assetStatus = importedCount > 0
+                ? "Imported " + std::to_string(importedCount) + " asset(s)"
+                : editorState.assetRegistry.getLastError();
+            editorState.pendingProjectCommand = ProjectCommand::Sync;
         }
     }
 
-    if (!compact) ImGui::SameLine();
-    if (ImGui::Button("Refresh")) {
-        editorState.pendingProjectCommand = ProjectCommand::Sync;
-        editorState.projectStatus = "Queued project asset sync";
-    }
-
-    if (!hasProject) {
-        ImGui::EndDisabled();
-        ImGui::TextWrapped("Import is disabled until a project is loaded.");
-    }
-
-    if (!compact) ImGui::SameLine();
-    ImGui::Text("Registered: %d", static_cast<int>(editorState.assetRegistry.getAssetCount()));
-    ImGui::InputTextWithHint("##AssetFilter", "Search assets", filterBuffer, sizeof(filterBuffer));
+    ImGui::TextWrapped("Project Root: %s", editorState.projectRootPath.c_str());
     ImGui::TextWrapped("%s", editorState.assetStatus.c_str());
-    if (!editorState.assetRegistry.getLastImportedFolder().empty()) {
-        ImGui::TextWrapped("Last Folder: %s", editorState.assetRegistry.getLastImportedFolder().c_str());
-    }
-    ImGui::TextWrapped("Project Asset Root: %s", editorState.assetRegistry.getProjectAssetRoot().c_str());
-
-    if (hasSelection) {
-        ImGui::Text("Selected Object: %s", sceneState.objects[index].name.c_str());
-        ImGui::Text("Current Resource ID: %llu",
-            static_cast<unsigned long long>(sceneState.objects[index].textureResourceId));
-        ImGui::Text("Current Texture: %s", sceneState.objects[index].texturePath.c_str());
-    }
-    else {
-        ImGui::Text("No object selected");
-    }
-
     ImGui::Separator();
 
-    if (!hasSelection) {
-        ImGui::BeginDisabled();
+    if (browserState.openRenamePopup) {
+        ImGui::OpenPopup("RenameProjectEntryPopup");
+        browserState.openRenamePopup = false;
     }
 
-    const auto& assets = editorState.assetRegistry.getAssets();
-    ImGui::BeginChild("AssetList", ImVec2(0.0f, 180.0f), true);
-    {
-        if (ImGui::BeginTable("AssetTable", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY)) {
-            ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed, 52.0f);
-            ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch, 1.4f);
-            ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, 86.0f);
-            ImGui::TableHeadersRow();
+    if (ImGui::BeginPopupModal("DeleteProjectEntryPopup", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextWrapped("Delete this file from the project?");
+        ImGui::TextWrapped("%s", browserState.pendingDeletePath.c_str());
+        if (ImGui::Button("Delete", ImVec2(120.0f, 0.0f))) {
+            std::string error;
+            if (ProjectManager::DeleteProjectEntry(BuildProjectDescriptor(editorState), browserState.pendingDeletePath, error)) {
+                editorState.assetStatus = "Deleted: " + browserState.pendingDeletePath;
+                editorState.pendingProjectCommand = ProjectCommand::Sync;
+                if (browserState.selectedPath == browserState.pendingDeletePath) browserState.selectedPath.clear();
+                if (browserState.loadedTextPath == browserState.pendingDeletePath) {
+                    browserState.loadedTextPath.clear();
+                    browserState.textDirty = false;
+                    std::fill(browserState.textBuffer.begin(), browserState.textBuffer.end(), '\0');
+                }
+                ImGui::CloseCurrentPopup();
+            } else {
+                editorState.assetStatus = error.empty() ? "Failed to delete file" : error;
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel##Delete", ImVec2(120.0f, 0.0f))) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
 
-            for (const AssetRecord& asset : assets) {
-                if (filterBuffer[0] != '\0' &&
-                    asset.name.find(filterBuffer) == std::string::npos &&
-                    asset.relativePath.find(filterBuffer) == std::string::npos) {
+    if (ImGui::BeginPopupModal("RenameProjectEntryPopup", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextWrapped("Rename entry:");
+        ImGui::TextWrapped("%s", browserState.pendingRenamePath.c_str());
+        ImGui::InputText("New Name", browserState.renameItemName, sizeof(browserState.renameItemName));
+        if (ImGui::Button("Rename", ImVec2(120.0f, 0.0f))) {
+            std::string renamedPath;
+            std::string error;
+            if (ProjectManager::RenameProjectEntry(
+                BuildProjectDescriptor(editorState),
+                browserState.pendingRenamePath,
+                browserState.renameItemName,
+                renamedPath,
+                error)) {
+                editorState.assetStatus = "Renamed: " + renamedPath;
+                editorState.pendingProjectCommand = ProjectCommand::Sync;
+                browserState.selectedPath = renamedPath;
+                if (browserState.loadedTextPath == browserState.pendingRenamePath) {
+                    browserState.loadedTextPath = renamedPath;
+                }
+                ImGui::CloseCurrentPopup();
+            } else {
+                editorState.assetStatus = error.empty() ? "Failed to rename entry" : error;
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel##Rename", ImVec2(120.0f, 0.0f))) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+
+    if (ImGui::BeginTable("ProjectBrowser", 2, ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV)) {
+        ImGui::TableSetupColumn("Folders", ImGuiTableColumnFlags_WidthStretch, 0.34f);
+        ImGui::TableSetupColumn("Files", ImGuiTableColumnFlags_WidthStretch, 0.66f);
+
+        ImGui::TableNextColumn();
+        ImGui::BeginChild("FolderTree", ImVec2(0.0f, 280.0f), true);
+        {
+            ImGuiTreeNodeFlags rootFlags = ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_OpenOnArrow;
+            if (browserState.currentDirectory == editorState.projectRootPath) rootFlags |= ImGuiTreeNodeFlags_Selected;
+            const bool open = ImGui::TreeNodeEx(editorState.projectRootPath.c_str(), rootFlags, "%s", editorState.projectName.c_str());
+            if (ImGui::IsItemClicked()) {
+                browserState.currentDirectory = editorState.projectRootPath;
+                browserState.selectedPath = editorState.projectRootPath;
+            }
+            if (ImGui::BeginPopupContextItem("RootContext")) {
+                if (ImGui::BeginMenu("Create Item")) {
+                    if (ImGui::MenuItem("Audio")) {
+                        CreateItemAndStartRename(browserState, editorState, 0, editorState.projectRootPath);
+                    }
+                    if (ImGui::MenuItem("Image")) {
+                        CreateItemAndStartRename(browserState, editorState, 1, editorState.projectRootPath);
+                    }
+                    if (ImGui::MenuItem("Text")) {
+                        CreateItemAndStartRename(browserState, editorState, 2, editorState.projectRootPath);
+                    }
+                    if (ImGui::MenuItem("Scene")) {
+                        CreateItemAndStartRename(browserState, editorState, 3, editorState.projectRootPath);
+                    }
+                    if (ImGui::MenuItem("C++ Script")) {
+                        CreateItemAndStartRename(browserState, editorState, 4, editorState.projectRootPath);
+                    }
+                    ImGui::EndMenu();
+                }
+                ImGui::EndPopup();
+            }
+            if (open) {
+                DrawFolderTree(ResourcePathUtils::Utf8ToPath(editorState.projectRootPath), browserState, editorState);
+                ImGui::TreePop();
+            }
+        }
+        ImGui::EndChild();
+
+        ImGui::TableNextColumn();
+        ImGui::BeginChild("DirectoryContents", ImVec2(0.0f, 280.0f), true);
+        {
+            std::vector<fs::directory_entry> entries;
+            std::error_code ec;
+            const fs::path currentDir = ResourcePathUtils::Utf8ToPath(browserState.currentDirectory);
+            for (const auto& entry : fs::directory_iterator(currentDir, fs::directory_options::skip_permission_denied, ec)) {
+                if (ec) {
+                    ec.clear();
                     continue;
                 }
-                const bool selected = hasSelection && (sceneState.objects[index].textureResourceId == asset.id);
-
-                ImGui::TableNextRow();
-                ImGui::TableNextColumn();
-                ImGui::Text("%llu", static_cast<unsigned long long>(asset.id));
-                ImGui::TableNextColumn();
-                if (ImGui::Selectable(asset.name.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns)) {
-                    AssignAssetToSelection(sceneState, editorState, asset);
-                }
-                ImGui::TableNextColumn();
-                ImGui::TextUnformatted(asset.typeName.c_str());
-
-                if (ImGui::IsItemHovered() || ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-                    ImGui::BeginTooltip();
-                    ImGui::Text("ID: %llu", static_cast<unsigned long long>(asset.id));
-                    ImGui::Text("Type: %s", asset.typeName.c_str());
-                    ImGui::TextWrapped("Source: %s", asset.sourcePath.c_str());
-                    ImGui::TextWrapped("Path: %s", asset.relativePath.c_str());
-                    ImGui::EndTooltip();
-                }
+                entries.push_back(entry);
             }
+            std::sort(entries.begin(), entries.end(), [](const fs::directory_entry& a, const fs::directory_entry& b) {
+                if (a.is_directory() != b.is_directory()) return a.is_directory() > b.is_directory();
+                return a.path().filename().generic_string() < b.path().filename().generic_string();
+            });
 
-            ImGui::EndTable();
+            for (const auto& entry : entries) {
+                const fs::path path = entry.path();
+                const std::string normalized = NormalizePath(path);
+                const bool isDir = entry.is_directory();
+                const bool selected = browserState.selectedPath == normalized;
+                std::string label = isDir ? "[Dir] " : "[File] ";
+                label += path.filename().generic_string();
+                if (ImGui::Selectable((label + "##" + normalized).c_str(), selected)) {
+                    browserState.selectedPath = normalized;
+                    if (isDir) {
+                        browserState.currentDirectory = normalized;
+                    } else if (IsTextEditable(path)) {
+                        if (LoadTextFile(normalized, browserState.textBuffer)) {
+                            browserState.loadedTextPath = normalized;
+                            browserState.textDirty = false;
+                        }
+                    }
+                }
+                if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                    if (isDir) {
+                        browserState.currentDirectory = normalized;
+                    } else if (IsSceneFile(path)) {
+                        OpenScene(sceneState, editorState, normalized);
+                    } else if (IsTextEditable(path) && LoadTextFile(normalized, browserState.textBuffer)) {
+                        browserState.loadedTextPath = normalized;
+                        browserState.textDirty = false;
+                    }
+                }
+                if (ImGui::BeginPopupContextItem(normalized.c_str())) {
+                    if (isDir) {
+                        if (ImGui::BeginMenu("Create Item")) {
+                            if (ImGui::MenuItem("Audio")) {
+                                CreateItemAndStartRename(browserState, editorState, 0, normalized);
+                            }
+                            if (ImGui::MenuItem("Image")) {
+                                CreateItemAndStartRename(browserState, editorState, 1, normalized);
+                            }
+                            if (ImGui::MenuItem("Text")) {
+                                CreateItemAndStartRename(browserState, editorState, 2, normalized);
+                            }
+                            if (ImGui::MenuItem("Scene")) {
+                                CreateItemAndStartRename(browserState, editorState, 3, normalized);
+                            }
+                            if (ImGui::MenuItem("C++ Script")) {
+                                CreateItemAndStartRename(browserState, editorState, 4, normalized);
+                            }
+                            ImGui::EndMenu();
+                        }
+                        if (ImGui::MenuItem("Rename")) {
+                            QueueRenameForPath(browserState, normalized);
+                        }
+                    } else {
+                        if (IsSceneFile(path) && ImGui::MenuItem("Open Scene")) {
+                            OpenScene(sceneState, editorState, normalized);
+                        }
+                        if (ImGui::MenuItem("Rename")) {
+                            QueueRenameForPath(browserState, normalized);
+                        }
+                        if (ImGui::MenuItem("Delete")) {
+                            browserState.pendingDeletePath = normalized;
+                            ImGui::OpenPopup("DeleteProjectEntryPopup");
+                        }
+                    }
+                    ImGui::EndPopup();
+                }
+                ImGui::TextDisabled("%s", RelativeToProject(editorState, path).c_str());
+            }
+            if (ImGui::BeginPopupContextWindow("DirectoryBlankContext", ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems)) {
+                if (ImGui::BeginMenu("Create Item")) {
+                    if (ImGui::MenuItem("Audio")) {
+                        CreateItemAndStartRename(browserState, editorState, 0, browserState.currentDirectory);
+                    }
+                    if (ImGui::MenuItem("Image")) {
+                        CreateItemAndStartRename(browserState, editorState, 1, browserState.currentDirectory);
+                    }
+                    if (ImGui::MenuItem("Text")) {
+                        CreateItemAndStartRename(browserState, editorState, 2, browserState.currentDirectory);
+                    }
+                    if (ImGui::MenuItem("Scene")) {
+                        CreateItemAndStartRename(browserState, editorState, 3, browserState.currentDirectory);
+                    }
+                    if (ImGui::MenuItem("C++ Script")) {
+                        CreateItemAndStartRename(browserState, editorState, 4, browserState.currentDirectory);
+                    }
+                    ImGui::EndMenu();
+                }
+                ImGui::EndPopup();
+            }
         }
-    }
-    ImGui::EndChild();
-
-    if (!hasSelection) {
-        ImGui::EndDisabled();
+        ImGui::EndChild();
+        ImGui::EndTable();
     }
 
     ImGui::Separator();
-    ImGui::Text("Preview");
-    if (hasSelection) {
-        ImGui::BulletText("Resource ID: %llu",
-            static_cast<unsigned long long>(sceneState.objects[index].textureResourceId));
-        ImGui::BulletText("Texture file: %s", sceneState.objects[index].texturePath.c_str());
-    }
-    else {
-        ImGui::BulletText("No texture selected");
+    ImGui::TextUnformatted("Selection");
+    if (!browserState.selectedPath.empty() && fs::exists(ResourcePathUtils::Utf8ToPath(browserState.selectedPath))) {
+        const fs::path selected = ResourcePathUtils::Utf8ToPath(browserState.selectedPath);
+        ImGui::TextWrapped("Path: %s", browserState.selectedPath.c_str());
+        if (fs::is_regular_file(selected)) {
+            const AssetRecord* asset = editorState.assetRegistry.findByPath(browserState.selectedPath);
+            if (asset != nullptr) {
+                ImGui::Text("Asset Type: %s", asset->typeName.c_str());
+                if (asset->type == AssetType::Texture && ImGui::Button("Bind Texture To Selected Object")) {
+                    AssignAssetToSelection(sceneState, editorState, *asset);
+                }
+                if (asset->type == AssetType::Script && ImGui::Button("Bind Script To Selected Object")) {
+                    const int index = editorState.selectedObjectIndex;
+                    if (index >= 0 && index < static_cast<int>(sceneState.objects.size())) {
+                        sceneState.objects[index].scriptResourceId = asset->id;
+                        sceneState.objects[index].scriptPath = asset->sourcePath;
+                        editorState.assetStatus = "Bound script: " + asset->name;
+                    } else {
+                        editorState.assetStatus = "Select an object before binding a script";
+                    }
+                }
+            }
+            if (IsSceneFile(selected) && ImGui::Button("Open Scene File")) {
+                OpenScene(sceneState, editorState, browserState.selectedPath);
+            }
+            if (IsTextEditable(selected)) {
+                if (browserState.loadedTextPath != browserState.selectedPath && LoadTextFile(browserState.selectedPath, browserState.textBuffer)) {
+                    browserState.loadedTextPath = browserState.selectedPath;
+                    browserState.textDirty = false;
+                }
+                if (ImGui::InputTextMultiline("##FileEditor", browserState.textBuffer.data(), browserState.textBuffer.size(), ImVec2(-1.0f, 180.0f))) {
+                    browserState.textDirty = true;
+                }
+                if (browserState.textDirty) ImGui::TextDisabled("Unsaved changes");
+                if (ImGui::Button("Save File")) {
+                    if (SaveTextFile(browserState.selectedPath, browserState.textBuffer)) {
+                        browserState.textDirty = false;
+                        editorState.assetStatus = "Saved file: " + browserState.selectedPath;
+                        editorState.pendingProjectCommand = ProjectCommand::Sync;
+                    } else {
+                        editorState.assetStatus = "Failed to save file";
+                    }
+                }
+            }
+        }
+    } else {
+        ImGui::TextUnformatted("Select a file or folder to inspect it.");
     }
 
     ImGui::End();

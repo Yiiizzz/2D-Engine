@@ -2,6 +2,8 @@
 #include <SDL3/SDL.h>
 
 class WindowManager;
+struct SceneState;
+struct EditorState;
 
 class InputManager {
 private:
@@ -9,6 +11,6 @@ private:
 
 public:
     InputManager();
-    void processEvents(WindowManager& windowManager);
+    void processEvents(WindowManager& windowManager, SceneState& sceneState, EditorState& editorState);
     bool shouldQuit() const;
 };

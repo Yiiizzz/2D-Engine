@@ -378,3 +378,5 @@ cmake-build-debug/
 *.log
 # 资源文件（可选，若素材太大可不上传）
 assets/
+_upstream_compare/
+_lancelot_compare/

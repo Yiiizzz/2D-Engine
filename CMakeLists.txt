@@ -25,6 +25,7 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/external/imgui
+    ${CMAKE_SOURCE_DIR}/external/json-develop/single_include
 )
 
 # 可执行程序
@@ -39,8 +40,13 @@ add_executable(SDLTest
     backend/resource/TextureManager.cpp
     backend/input/InputManager.cpp
     backend/core/GameLoop.cpp
+    backend/project/ProjectManager.cpp
+    backend/script/ScriptRuntime.cpp
     backend/resource/ResourceManager.cpp
+    backend/resource/AssetRegistry.cpp
+    backend/resource/ResourcePathUtils.cpp
     backend/resource/Sprite.cpp
+    backend/SceneSerializer.cpp
 
     # frontend 编辑器
     frontend/src/editor/EditorUI.cpp
@@ -48,6 +54,7 @@ add_executable(SDLTest
     frontend/src/editor/Panels/AssetPanel.cpp
     frontend/src/editor/Panels/HierarchyPanel.cpp 
     frontend/src/editor/Panels/InspectorPanel.cpp 
+    frontend/src/editor/Panels/ConsolePanel.cpp
 
     # ImGui 核心 【正确写法：一行一个，不要引号！】
     external/imgui/imgui.cpp
@@ -60,12 +67,13 @@ add_executable(SDLTest
     # ImGui SDL3 后端
     external/imgui/backends/imgui_impl_sdl3.cpp
     external/imgui/backends/imgui_impl_sdlrenderer3.cpp
- "frontend/src/editor/Panels/ConsolePanel.h" "frontend/src/editor/Panels/ConsolePanel.cpp")
+)
 
 # 链接库
 target_link_libraries(SDLTest PRIVATE
     SDL3::SDL3
     SDL3_image::SDL3_image
+    Ole32
 )
 # 复制 asset 文件夹到 exe 目录
 add_custom_command(TARGET SDLTest POST_BUILD

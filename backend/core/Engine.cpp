@@ -10,7 +10,6 @@
 #include <imgui.h>
 
 #include <filesystem>
-#include <iostream>
 
 namespace fs = std::filesystem;
 

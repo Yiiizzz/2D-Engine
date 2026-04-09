@@ -128,7 +128,7 @@ void DrawActionButtonRow(SceneState& sceneState, EditorState& editorState, int i
 
 }
 
-void DrawScenePanel(SceneState& sceneState, EditorState& editorState, SDL_Texture* sceneTexture)
+void DrawScenePanel(SceneState& sceneState, EditorState& editorState, const SceneViewportImage& sceneImage)
 {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 8));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0);
@@ -156,13 +156,9 @@ void DrawScenePanel(SceneState& sceneState, EditorState& editorState, SDL_Textur
     editorState.sceneViewportScreenWidth = viewportSize.x;
     editorState.sceneViewportScreenHeight = viewportSize.y;
 
-    if (sceneTexture) {
-        float textureWidth = 1.0f;
-        float textureHeight = 1.0f;
-        if (!SDL_GetTextureSize(sceneTexture, &textureWidth, &textureHeight)) {
-            textureWidth = viewportSize.x;
-            textureHeight = viewportSize.y;
-        }
+    if (sceneImage.Handle != nullptr) {
+        float textureWidth = sceneImage.Width > 0.0f ? sceneImage.Width : viewportSize.x;
+        float textureHeight = sceneImage.Height > 0.0f ? sceneImage.Height : viewportSize.y;
 
         float scale = std::min(viewportSize.x / textureWidth, viewportSize.y / textureHeight);
         scale = (scale > 0.0f) ? scale : 1.0f;
@@ -177,7 +173,7 @@ void DrawScenePanel(SceneState& sceneState, EditorState& editorState, SDL_Textur
         editorState.sceneViewportScreenY = imageScreenPos.y;
         editorState.sceneViewportScreenWidth = imageSize.x;
         editorState.sceneViewportScreenHeight = imageSize.y;
-        ImGui::Image((ImTextureID)(intptr_t)sceneTexture, imageSize);
+        ImGui::Image((ImTextureID)sceneImage.Handle, imageSize, ImVec2(0.0f, 1.0f), ImVec2(1.0f, 0.0f));
 
         if (ImGui::BeginDragDropTarget()) {
             int dropTargetIndex = editorState.selectedObjectIndex;

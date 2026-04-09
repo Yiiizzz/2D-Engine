@@ -26,6 +26,8 @@ public:
     void PollEvents();
     void OnUpdate();
     bool ShouldClose() const;
+    void ToggleFullscreen();
+    void Resize(int width, int height);
     void SetVSync(bool enabled);
     bool IsVSync() const;
     unsigned int GetWidth() const;
@@ -41,4 +43,9 @@ private:
     GLFWwindow* m_Window = nullptr;
     std::unique_ptr<GraphicsContext> m_Context;
     bool m_Initialized = false;
+    bool m_Fullscreen = false;
+    int m_WindowedX = 100;
+    int m_WindowedY = 100;
+    int m_WindowedWidth = 1280;
+    int m_WindowedHeight = 720;
 };

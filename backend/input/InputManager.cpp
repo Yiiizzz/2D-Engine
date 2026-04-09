@@ -1,9 +1,13 @@
 #include "InputManager.h"
+
 #include "../core/SceneState.h"
 #include "../window/WindowManager.h"
 #include "../../frontend/src/EditorState.h"
-#include <backends/imgui_impl_sdl3.h>
+
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>
 #include <imgui.h>
+
 #include <algorithm>
 #include <iostream>
 
@@ -76,93 +80,100 @@ void StopSceneDrag(EditorState& editorState) {
 
 }
 
-InputManager::InputManager() : quitRequested(false) {}
+InputManager::InputManager() = default;
 
 void InputManager::processEvents(WindowManager& windowManager, SceneState& sceneState, EditorState& editorState) {
-    SDL_Event event;
+    GLFWwindow* nativeWindow = windowManager.GetNativeWindow();
+    if (nativeWindow == nullptr) {
+        return;
+    }
 
-    while (SDL_PollEvent(&event)) {
-        ImGui_ImplSDL3_ProcessEvent(&event);
+    if (windowManager.ShouldClose()) {
+        m_QuitRequested = true;
+    }
 
-        switch (event.type) {
-        case SDL_EVENT_QUIT:
-            quitRequested = true;
-            break;
+    const bool escapePressed = glfwGetKey(nativeWindow, GLFW_KEY_ESCAPE) == GLFW_PRESS;
+    if (escapePressed && !m_PreviousEscapePressed) {
+        m_QuitRequested = true;
+    }
+    m_PreviousEscapePressed = escapePressed;
 
-        case SDL_EVENT_KEY_DOWN:
-            if (event.key.key == SDLK_ESCAPE) {
-                quitRequested = true;
-            }
-            else if (event.key.key == SDLK_F) {
-                windowManager.toggleFullscreen();
-                std::cout << "Toggled fullscreen mode" << std::endl;
-            }
-            else if (event.key.key == SDLK_1) {
-                windowManager.resize(800, 600);
-                std::cout << "Window resized to 800x600" << std::endl;
-            }
-            else if (event.key.key == SDLK_2) {
-                windowManager.resize(1024, 768);
-                std::cout << "Window resized to 1024x768" << std::endl;
-            }
-            else if (event.key.key == SDLK_3) {
-                windowManager.resize(1280, 720);
-                std::cout << "Window resized to 1280x720" << std::endl;
-            }
-            break;
+    const bool fullscreenPressed = glfwGetKey(nativeWindow, GLFW_KEY_F) == GLFW_PRESS;
+    if (fullscreenPressed && !m_PreviousFullscreenPressed && !ImGui::GetIO().WantCaptureKeyboard) {
+        windowManager.ToggleFullscreen();
+        std::cout << "Toggled fullscreen mode" << std::endl;
+    }
+    m_PreviousFullscreenPressed = fullscreenPressed;
 
-        case SDL_EVENT_MOUSE_BUTTON_DOWN:
-            if (event.button.button == SDL_BUTTON_LEFT) {
-                float sceneX = 0.0f;
-                float sceneY = 0.0f;
-                const bool insideSceneViewport = MapScreenToScenePoint(
-                    event.button.x,
-                    event.button.y,
-                    editorState,
-                    sceneX,
-                    sceneY);
+    const bool resize1Pressed = glfwGetKey(nativeWindow, GLFW_KEY_1) == GLFW_PRESS;
+    if (resize1Pressed && !m_PreviousResize1Pressed && !ImGui::GetIO().WantCaptureKeyboard) {
+        windowManager.Resize(800, 600);
+    }
+    m_PreviousResize1Pressed = resize1Pressed;
 
-                if (insideSceneViewport) {
-                    const int hitObjectIndex = FindTopmostObjectAt(sceneState, sceneX, sceneY);
-                    editorState.selectedObjectIndex = hitObjectIndex;
+    const bool resize2Pressed = glfwGetKey(nativeWindow, GLFW_KEY_2) == GLFW_PRESS;
+    if (resize2Pressed && !m_PreviousResize2Pressed && !ImGui::GetIO().WantCaptureKeyboard) {
+        windowManager.Resize(1024, 768);
+    }
+    m_PreviousResize2Pressed = resize2Pressed;
 
-                    if (hitObjectIndex >= 0 && hitObjectIndex < static_cast<int>(sceneState.objects.size())) {
-                        const GameObject& object = sceneState.objects[hitObjectIndex];
-                        editorState.isDraggingSceneObject = true;
-                        editorState.draggingObjectIndex = hitObjectIndex;
-                        editorState.sceneDragOffsetX = sceneX - object.position[0];
-                        editorState.sceneDragOffsetY = sceneY - object.position[1];
-                    } else {
-                        StopSceneDrag(editorState);
-                    }
-                } else if (!ImGui::GetIO().WantCaptureMouse) {
-                    editorState.selectedObjectIndex = -1;
-                    StopSceneDrag(editorState);
-                }
-            }
-            break;
+    const bool resize3Pressed = glfwGetKey(nativeWindow, GLFW_KEY_3) == GLFW_PRESS;
+    if (resize3Pressed && !m_PreviousResize3Pressed && !ImGui::GetIO().WantCaptureKeyboard) {
+        windowManager.Resize(1280, 720);
+    }
+    m_PreviousResize3Pressed = resize3Pressed;
 
-        case SDL_EVENT_MOUSE_MOTION:
-            if (editorState.isDraggingSceneObject &&
-                editorState.draggingObjectIndex >= 0 &&
-                editorState.draggingObjectIndex < static_cast<int>(sceneState.objects.size())) {
-                float sceneX = 0.0f;
-                float sceneY = 0.0f;
-                if (MapScreenToScenePoint(event.motion.x, event.motion.y, editorState, sceneX, sceneY, true)) {
-                    GameObject& object = sceneState.objects[editorState.draggingObjectIndex];
-                    object.position[0] = sceneX - editorState.sceneDragOffsetX;
-                    object.position[1] = sceneY - editorState.sceneDragOffsetY;
-                }
-            }
-            break;
+    double mouseX = 0.0;
+    double mouseY = 0.0;
+    glfwGetCursorPos(nativeWindow, &mouseX, &mouseY);
 
-        case SDL_EVENT_MOUSE_BUTTON_UP:
-            if (event.button.button == SDL_BUTTON_LEFT) {
+    const bool leftMousePressed = glfwGetMouseButton(nativeWindow, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+    if (leftMousePressed && !m_PreviousLeftMousePressed) {
+        float sceneX = 0.0f;
+        float sceneY = 0.0f;
+        const bool insideSceneViewport = MapScreenToScenePoint(
+            static_cast<float>(mouseX),
+            static_cast<float>(mouseY),
+            editorState,
+            sceneX,
+            sceneY);
+
+        if (insideSceneViewport) {
+            const int hitObjectIndex = FindTopmostObjectAt(sceneState, sceneX, sceneY);
+            editorState.selectedObjectIndex = hitObjectIndex;
+
+            if (hitObjectIndex >= 0 && hitObjectIndex < static_cast<int>(sceneState.objects.size())) {
+                const GameObject& object = sceneState.objects[hitObjectIndex];
+                editorState.isDraggingSceneObject = true;
+                editorState.draggingObjectIndex = hitObjectIndex;
+                editorState.sceneDragOffsetX = sceneX - object.position[0];
+                editorState.sceneDragOffsetY = sceneY - object.position[1];
+            } else {
                 StopSceneDrag(editorState);
             }
-            break;
+        } else if (!ImGui::GetIO().WantCaptureMouse) {
+            editorState.selectedObjectIndex = -1;
+            StopSceneDrag(editorState);
         }
     }
+
+    if (leftMousePressed &&
+        editorState.isDraggingSceneObject &&
+        editorState.draggingObjectIndex >= 0 &&
+        editorState.draggingObjectIndex < static_cast<int>(sceneState.objects.size())) {
+        float sceneX = 0.0f;
+        float sceneY = 0.0f;
+        if (MapScreenToScenePoint(static_cast<float>(mouseX), static_cast<float>(mouseY), editorState, sceneX, sceneY, true)) {
+            GameObject& object = sceneState.objects[editorState.draggingObjectIndex];
+            object.position[0] = sceneX - editorState.sceneDragOffsetX;
+            object.position[1] = sceneY - editorState.sceneDragOffsetY;
+        }
+    }
+
+    if (!leftMousePressed && m_PreviousLeftMousePressed) {
+        StopSceneDrag(editorState);
+    }
+    m_PreviousLeftMousePressed = leftMousePressed;
 
     if (editorState.draggingObjectIndex >= static_cast<int>(sceneState.objects.size())) {
         StopSceneDrag(editorState);
@@ -170,5 +181,5 @@ void InputManager::processEvents(WindowManager& windowManager, SceneState& scene
 }
 
 bool InputManager::shouldQuit() const {
-    return quitRequested;
+    return m_QuitRequested;
 }

@@ -2,6 +2,7 @@
 
 #include "../render/GraphicsContext.h"
 
+#define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 
 #include <iostream>
@@ -76,6 +77,31 @@ void WindowManager::OnUpdate() {
 
 bool WindowManager::ShouldClose() const {
     return m_Window == nullptr || glfwWindowShouldClose(m_Window) != 0;
+}
+
+void WindowManager::ToggleFullscreen() {
+    if (m_Window == nullptr) {
+        return;
+    }
+
+    m_Fullscreen = !m_Fullscreen;
+    if (m_Fullscreen) {
+        glfwGetWindowPos(m_Window, &m_WindowedX, &m_WindowedY);
+        glfwGetWindowSize(m_Window, &m_WindowedWidth, &m_WindowedHeight);
+        GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+        const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+        glfwSetWindowMonitor(m_Window, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
+    } else {
+        glfwSetWindowMonitor(m_Window, nullptr, m_WindowedX, m_WindowedY, m_WindowedWidth, m_WindowedHeight, 0);
+    }
+}
+
+void WindowManager::Resize(int width, int height) {
+    if (m_Window == nullptr) {
+        return;
+    }
+
+    glfwSetWindowSize(m_Window, width, height);
 }
 
 void WindowManager::SetVSync(bool enabled) {

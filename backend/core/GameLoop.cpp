@@ -1,14 +1,16 @@
 #include "GameLoop.h"
-#include <SDL3/SDL.h>
+
+#include <chrono>
 
 void GameLoop::update(SceneState& sceneState, EditorState& editorState)
 {
-    const Uint64 now = SDL_GetTicks();
+    const auto nowPoint = std::chrono::steady_clock::now();
+    const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(nowPoint.time_since_epoch()).count();
     float deltaTime = 1.0f / 60.0f;
     if (lastTickMs != 0 && now > lastTickMs) {
         deltaTime = static_cast<float>(now - lastTickMs) / 1000.0f;
     }
-    lastTickMs = now;
+    lastTickMs = static_cast<unsigned long long>(now);
 
     if (editorState.mode != EditorMode::Play) {
         if (wasPlaying) {

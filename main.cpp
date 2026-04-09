@@ -1,12 +1,12 @@
-#include "backend/core/Application.h"
+#include "backend/core/Engine.h"
 
 int main() {
-    Application application;
-    if (!application.Init()) {
+    Engine engine;
+    if (!engine.init()) {
         return 1;
     }
 
-    application.Run();
-    application.Shutdown();
+    engine.run();
+    engine.shutdown();
     return 0;
 }

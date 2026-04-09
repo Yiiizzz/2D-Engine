@@ -1,38 +1,47 @@
 #include "Renderer.h"
 
+#include "Material.h"
 #include "OrthographicCamera.h"
 #include "RenderCommand.h"
-#include "Shader.h"
 #include "VertexArray.h"
 
-Renderer::SceneData Renderer::s_SceneData;
+namespace {
+struct SceneData {
+    Matrix4 ViewProjectionMatrix = Matrix4::Identity();
+};
+
+SceneData s_SceneData;
+}
 
 void Renderer::Init(GraphicsAPI api) {
     RenderCommand::Init(api);
 }
 
 void Renderer::Shutdown() {
-    s_SceneData.Camera = nullptr;
-}
-
-void Renderer::OnWindowResize(unsigned int width, unsigned int height) {
-    RenderCommand::SetViewport(0, 0, width, height);
 }
 
 void Renderer::BeginScene(const OrthographicCamera& camera) {
-    s_SceneData.Camera = &camera;
+    s_SceneData.ViewProjectionMatrix = camera.GetViewProjectionMatrix();
 }
 
 void Renderer::EndScene() {
 }
 
-void Renderer::Submit(const std::shared_ptr<Shader>& shader, const std::shared_ptr<VertexArray>& vertexArray) {
-    if (s_SceneData.Camera == nullptr) {
+void Renderer::OnWindowResize(unsigned int width, unsigned int height) {
+    if (width == 0 || height == 0) {
         return;
     }
 
-    shader->Bind();
-    shader->SetMat4("u_ViewProjection", s_SceneData.Camera->GetViewProjectionMatrix());
+    RenderCommand::SetViewport(0, 0, width, height);
+}
+
+void Renderer::Submit(
+    const Ref<Material>& material,
+    const Ref<VertexArray>& vertexArray,
+    const Transform& transform) {
+    material->SetMat4("u_ViewProjection", s_SceneData.ViewProjectionMatrix);
+    material->SetMat4("u_Transform", transform.ToMatrix());
+    material->Bind();
     vertexArray->Bind();
     RenderCommand::DrawIndexed(*vertexArray);
 }

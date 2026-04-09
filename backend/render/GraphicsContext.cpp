@@ -4,10 +4,10 @@
 
 #include <stdexcept>
 
-std::unique_ptr<GraphicsContext> GraphicsContext::Create(void* windowHandle, GraphicsAPI api) {
+Scope<GraphicsContext> GraphicsContext::Create(void* windowHandle, GraphicsAPI api) {
     switch (api) {
     case GraphicsAPI::OpenGL:
-        return std::make_unique<OpenGLContext>(windowHandle);
+        return CreateScope<OpenGLContext>(windowHandle);
     case GraphicsAPI::Vulkan:
     case GraphicsAPI::DX12:
     case GraphicsAPI::None:

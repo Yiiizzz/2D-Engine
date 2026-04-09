@@ -5,10 +5,10 @@
 
 #include <stdexcept>
 
-std::shared_ptr<VertexArray> VertexArray::Create() {
+Ref<VertexArray> VertexArray::Create() {
     switch (RendererAPI::GetAPI()) {
     case GraphicsAPI::OpenGL:
-        return std::make_shared<OpenGLVertexArray>();
+        return CreateRef<OpenGLVertexArray>();
     case GraphicsAPI::Vulkan:
     case GraphicsAPI::DX12:
     case GraphicsAPI::None:

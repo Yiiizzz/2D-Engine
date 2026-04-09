@@ -1,5 +1,7 @@
 #include "OrthographicCamera.h"
 
+#include <cmath>
+
 Matrix4::Matrix4() : m_Elements{ 0.0f } {}
 
 const float* Matrix4::Data() const {
@@ -40,6 +42,53 @@ Matrix4 Matrix4::Translation(float x, float y, float z) {
     return result;
 }
 
+Matrix4 Matrix4::Scale(float x, float y, float z) {
+    Matrix4 result = Identity();
+    result.m_Elements[0] = x;
+    result.m_Elements[5] = y;
+    result.m_Elements[10] = z;
+    return result;
+}
+
+Matrix4 Matrix4::RotationX(float radians) {
+    Matrix4 result = Identity();
+    const float cosine = std::cos(radians);
+    const float sine = std::sin(radians);
+
+    result.m_Elements[5] = cosine;
+    result.m_Elements[6] = sine;
+    result.m_Elements[9] = -sine;
+    result.m_Elements[10] = cosine;
+
+    return result;
+}
+
+Matrix4 Matrix4::RotationY(float radians) {
+    Matrix4 result = Identity();
+    const float cosine = std::cos(radians);
+    const float sine = std::sin(radians);
+
+    result.m_Elements[0] = cosine;
+    result.m_Elements[2] = -sine;
+    result.m_Elements[8] = sine;
+    result.m_Elements[10] = cosine;
+
+    return result;
+}
+
+Matrix4 Matrix4::RotationZ(float radians) {
+    Matrix4 result = Identity();
+    const float cosine = std::cos(radians);
+    const float sine = std::sin(radians);
+
+    result.m_Elements[0] = cosine;
+    result.m_Elements[1] = sine;
+    result.m_Elements[4] = -sine;
+    result.m_Elements[5] = cosine;
+
+    return result;
+}
+
 Matrix4 Matrix4::operator*(const Matrix4& other) const {
     Matrix4 result;
 
@@ -74,6 +123,11 @@ void OrthographicCamera::SetPosition(float x, float y, float z) {
     RecalculateViewMatrix();
 }
 
+void OrthographicCamera::SetRotation(float rotationRadians) {
+    m_Rotation = rotationRadians;
+    RecalculateViewMatrix();
+}
+
 const Matrix4& OrthographicCamera::GetProjectionMatrix() const {
     return m_ProjectionMatrix;
 }
@@ -86,7 +140,13 @@ const Matrix4& OrthographicCamera::GetViewProjectionMatrix() const {
     return m_ViewProjectionMatrix;
 }
 
+float OrthographicCamera::GetRotation() const {
+    return m_Rotation;
+}
+
 void OrthographicCamera::RecalculateViewMatrix() {
-    m_ViewMatrix = Matrix4::Translation(-m_Position[0], -m_Position[1], -m_Position[2]);
+    const Matrix4 inverseRotation = Matrix4::RotationZ(-m_Rotation);
+    const Matrix4 inverseTranslation = Matrix4::Translation(-m_Position[0], -m_Position[1], -m_Position[2]);
+    m_ViewMatrix = inverseRotation * inverseTranslation;
     m_ViewProjectionMatrix = m_ProjectionMatrix * m_ViewMatrix;
 }

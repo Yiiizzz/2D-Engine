@@ -1,7 +1,6 @@
 #pragma once
 
-#include <memory>
-
+#include "../core/Ref.h"
 #include "GraphicsAPI.h"
 
 class VertexArray;
@@ -23,7 +22,7 @@ public:
     virtual void Clear() = 0;
     virtual void DrawIndexed(const VertexArray& vertexArray, unsigned int indexCount = 0) = 0;
 
-    static std::unique_ptr<RendererAPI> Create(GraphicsAPI api);
+    static Scope<RendererAPI> Create(GraphicsAPI api);
     static GraphicsAPI GetAPI();
     static void SetAPI(GraphicsAPI api);
 

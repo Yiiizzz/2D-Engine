@@ -14,6 +14,20 @@ unsigned int ShaderDataTypeSize(ShaderDataType type) {
         return 4 * 3;
     case ShaderDataType::Float4:
         return 4 * 4;
+    case ShaderDataType::Mat3:
+        return 4 * 3 * 3;
+    case ShaderDataType::Mat4:
+        return 4 * 4 * 4;
+    case ShaderDataType::Int:
+        return 4;
+    case ShaderDataType::Int2:
+        return 4 * 2;
+    case ShaderDataType::Int3:
+        return 4 * 3;
+    case ShaderDataType::Int4:
+        return 4 * 4;
+    case ShaderDataType::Bool:
+        return 1;
     case ShaderDataType::None:
     default:
         return 0;
@@ -37,6 +51,20 @@ unsigned int BufferElement::GetComponentCount() const {
         return 3;
     case ShaderDataType::Float4:
         return 4;
+    case ShaderDataType::Mat3:
+        return 3;
+    case ShaderDataType::Mat4:
+        return 4;
+    case ShaderDataType::Int:
+        return 1;
+    case ShaderDataType::Int2:
+        return 2;
+    case ShaderDataType::Int3:
+        return 3;
+    case ShaderDataType::Int4:
+        return 4;
+    case ShaderDataType::Bool:
+        return 1;
     case ShaderDataType::None:
     default:
         return 0;
@@ -56,6 +84,14 @@ unsigned int BufferLayout::GetStride() const {
     return m_Stride;
 }
 
+std::vector<BufferElement>::const_iterator BufferLayout::begin() const {
+    return m_Elements.begin();
+}
+
+std::vector<BufferElement>::const_iterator BufferLayout::end() const {
+    return m_Elements.end();
+}
+
 void BufferLayout::CalculateOffsetsAndStride() {
     std::size_t offset = 0;
     m_Stride = 0;
@@ -67,10 +103,10 @@ void BufferLayout::CalculateOffsetsAndStride() {
     }
 }
 
-std::shared_ptr<VertexBuffer> VertexBuffer::Create(const float* vertices, unsigned int sizeInBytes) {
+Ref<VertexBuffer> VertexBuffer::Create(const float* vertices, unsigned int sizeInBytes) {
     switch (RendererAPI::GetAPI()) {
     case GraphicsAPI::OpenGL:
-        return std::make_shared<OpenGLVertexBuffer>(vertices, sizeInBytes);
+        return CreateRef<OpenGLVertexBuffer>(vertices, sizeInBytes);
     case GraphicsAPI::Vulkan:
     case GraphicsAPI::DX12:
     case GraphicsAPI::None:
@@ -79,10 +115,10 @@ std::shared_ptr<VertexBuffer> VertexBuffer::Create(const float* vertices, unsign
     }
 }
 
-std::shared_ptr<IndexBuffer> IndexBuffer::Create(const unsigned int* indices, unsigned int count) {
+Ref<IndexBuffer> IndexBuffer::Create(const unsigned int* indices, unsigned int count) {
     switch (RendererAPI::GetAPI()) {
     case GraphicsAPI::OpenGL:
-        return std::make_shared<OpenGLIndexBuffer>(indices, count);
+        return CreateRef<OpenGLIndexBuffer>(indices, count);
     case GraphicsAPI::Vulkan:
     case GraphicsAPI::DX12:
     case GraphicsAPI::None:

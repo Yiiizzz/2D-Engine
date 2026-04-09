@@ -1,14 +1,13 @@
 #pragma once
 
-#include <memory>
+#include <chrono>
 
-#include "../render/OrthographicCamera.h"
+#include "../../app/OrthographicCameraController.h"
+#include "Timestep.h"
+#include "../render/Math.h"
+#include "../render/Renderer2D.h"
+#include "../render/ShaderLibrary.h"
 #include "../window/WindowManager.h"
-
-class IndexBuffer;
-class Shader;
-class VertexArray;
-class VertexBuffer;
 
 class Application {
 public:
@@ -17,15 +16,16 @@ public:
     void Shutdown();
 
 private:
-    void CreateDemoScene();
-    void UpdateCamera();
+    void Update(Timestep timestep);
 
 private:
     WindowManager m_Window;
-    OrthographicCamera m_Camera = OrthographicCamera(-1.6f, 1.6f, -0.9f, 0.9f);
-    std::shared_ptr<VertexArray> m_VertexArray;
-    std::shared_ptr<VertexBuffer> m_VertexBuffer;
-    std::shared_ptr<IndexBuffer> m_IndexBuffer;
-    std::shared_ptr<Shader> m_Shader;
+    ShaderLibrary m_ShaderLibrary;
+    OrthographicCameraController m_CameraController{ 16.0f / 9.0f, true };
+    Transform m_QuadTransform;
+    std::chrono::steady_clock::time_point m_LastFrameTime{};
+    float m_QuadRotation = 0.0f;
+    float m_QuadOffsetX = 0.0f;
+    float m_QuadDirection = 1.0f;
     bool m_Initialized = false;
 };

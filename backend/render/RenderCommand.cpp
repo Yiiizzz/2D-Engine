@@ -2,7 +2,7 @@
 
 #include "VertexArray.h"
 
-std::unique_ptr<RendererAPI> RenderCommand::s_RendererAPI = nullptr;
+Scope<RendererAPI> RenderCommand::s_RendererAPI = nullptr;
 
 void RenderCommand::Init(GraphicsAPI api) {
     RendererAPI::SetAPI(api);

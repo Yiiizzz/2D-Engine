@@ -1,17 +1,18 @@
 #include "Application.h"
 
-#include "../render/Buffer.h"
 #include "../render/RenderCommand.h"
 #include "../render/Renderer.h"
-#include "../render/Shader.h"
-#include "../render/VertexArray.h"
 
+#include <cmath>
 #include <exception>
+#include <filesystem>
 #include <iostream>
-#include <string>
 
 bool Application::Init() {
     try {
+        const std::filesystem::path projectRoot = std::filesystem::path(__FILE__).parent_path().parent_path().parent_path();
+        const std::filesystem::path renderer2DShaderPath = projectRoot / "assets" / "shaders" / "Renderer2D_Quad.glsl";
+
         WindowSpecification specification;
         specification.Title = "Lancelot Render Layer Demo";
         specification.Width = 1280;
@@ -24,9 +25,29 @@ bool Application::Init() {
         }
 
         Renderer::Init(m_Window.GetGraphicsAPI());
-        Renderer::OnWindowResize(m_Window.GetWidth(), m_Window.GetHeight());
-        CreateDemoScene();
-        UpdateCamera();
+        m_CameraController.SetWindowHandle(m_Window.GetNativeWindow());
+        m_Window.SetFramebufferResizeCallback([this](unsigned int width, unsigned int height) {
+            if (width == 0 || height == 0) {
+                return;
+            }
+
+            Renderer::OnWindowResize(width, height);
+            m_CameraController.OnResize(width, height);
+        });
+        m_Window.SetMouseScrollCallback([this](float xOffset, float yOffset) {
+            m_CameraController.OnMouseScrolled(xOffset, yOffset);
+        });
+
+        const unsigned int framebufferWidth = m_Window.GetFramebufferWidth();
+        const unsigned int framebufferHeight = m_Window.GetFramebufferHeight();
+        if (framebufferWidth > 0 && framebufferHeight > 0) {
+            Renderer::OnWindowResize(framebufferWidth, framebufferHeight);
+            m_CameraController.OnResize(framebufferWidth, framebufferHeight);
+        }
+
+        m_ShaderLibrary.Load("Renderer2D_Quad", renderer2DShaderPath.string());
+        Renderer2D::Init(CreateRef<ShaderLibrary>(m_ShaderLibrary));
+        m_LastFrameTime = std::chrono::steady_clock::now();
         m_Initialized = true;
         return true;
     } catch (const std::exception& exception) {
@@ -38,15 +59,24 @@ bool Application::Init() {
 
 void Application::Run() {
     while (m_Initialized && !m_Window.ShouldClose()) {
+        const auto frameStartTime = std::chrono::steady_clock::now();
+        const std::chrono::duration<float> frameDuration = frameStartTime - m_LastFrameTime;
+        m_LastFrameTime = frameStartTime;
+        const Timestep timestep(frameDuration.count());
+
         m_Window.PollEvents();
-        UpdateCamera();
+        Update(timestep);
+
+        if (m_Window.IsMinimized()) {
+            continue;
+        }
 
         RenderCommand::SetClearColor({ 0.08f, 0.10f, 0.14f, 1.0f });
         RenderCommand::Clear();
 
-        Renderer::BeginScene(m_Camera);
-        Renderer::Submit(m_Shader, m_VertexArray);
-        Renderer::EndScene();
+        Renderer2D::BeginScene(m_CameraController.GetCamera());
+        Renderer2D::DrawQuad(m_QuadTransform, { 0.95f, 0.45f, 0.25f, 1.0f });
+        Renderer2D::EndScene();
 
         m_Window.OnUpdate();
     }
@@ -57,72 +87,32 @@ void Application::Shutdown() {
         return;
     }
 
-    m_Shader.reset();
-    m_IndexBuffer.reset();
-    m_VertexBuffer.reset();
-    m_VertexArray.reset();
+    Renderer2D::Shutdown();
     Renderer::Shutdown();
     m_Window.Shutdown();
     m_Initialized = false;
 }
 
-void Application::CreateDemoScene() {
-    const float vertices[] = {
-        -0.5f, -0.5f, 0.0f, 1.0f, 0.3f, 0.2f,
-         0.5f, -0.5f, 0.0f, 0.2f, 0.8f, 0.3f,
-         0.5f,  0.5f, 0.0f, 0.2f, 0.4f, 1.0f,
-        -0.5f,  0.5f, 0.0f, 1.0f, 0.8f, 0.2f
-    };
+void Application::Update(Timestep timestep) {
+    constexpr float quadAngularSpeed = 1.2f;
+    constexpr float quadMoveSpeed = 0.45f;
+    constexpr float quadBounds = 0.45f;
 
-    const unsigned int indices[] = {
-        0, 1, 2,
-        2, 3, 0
-    };
+    m_CameraController.OnUpdate(timestep);
 
-    m_VertexArray = VertexArray::Create();
-    m_VertexBuffer = VertexBuffer::Create(vertices, sizeof(vertices));
-    m_VertexBuffer->SetLayout({
-        { ShaderDataType::Float3, "a_Position" },
-        { ShaderDataType::Float3, "a_Color" }
-    });
+    m_QuadRotation += quadAngularSpeed * timestep.GetSeconds();
+    m_QuadOffsetX += m_QuadDirection * quadMoveSpeed * timestep.GetSeconds();
 
-    m_IndexBuffer = IndexBuffer::Create(indices, static_cast<unsigned int>(sizeof(indices) / sizeof(unsigned int)));
-    m_VertexArray->AddVertexBuffer(m_VertexBuffer);
-    m_VertexArray->SetIndexBuffer(m_IndexBuffer);
+    if (m_QuadOffsetX > quadBounds) {
+        m_QuadOffsetX = quadBounds;
+        m_QuadDirection = -1.0f;
+    } else if (m_QuadOffsetX < -quadBounds) {
+        m_QuadOffsetX = -quadBounds;
+        m_QuadDirection = 1.0f;
+    }
 
-    const std::string vertexShader = R"(
-        #version 330 core
-        layout(location = 0) in vec3 a_Position;
-        layout(location = 1) in vec3 a_Color;
-
-        uniform mat4 u_ViewProjection;
-
-        out vec3 v_Color;
-
-        void main() {
-            v_Color = a_Color;
-            gl_Position = u_ViewProjection * vec4(a_Position, 1.0);
-        }
-    )";
-
-    const std::string fragmentShader = R"(
-        #version 330 core
-        layout(location = 0) out vec4 color;
-
-        in vec3 v_Color;
-
-        void main() {
-            color = vec4(v_Color, 1.0);
-        }
-    )";
-
-    m_Shader = Shader::Create(vertexShader, fragmentShader);
-}
-
-void Application::UpdateCamera() {
-    const float aspectRatio = static_cast<float>(m_Window.GetWidth()) / static_cast<float>(m_Window.GetHeight());
-    const float orthoHeight = 0.9f;
-    const float orthoWidth = orthoHeight * aspectRatio;
-    m_Camera.SetProjection(-orthoWidth, orthoWidth, -orthoHeight, orthoHeight);
-    Renderer::OnWindowResize(m_Window.GetWidth(), m_Window.GetHeight());
+    m_QuadTransform.Translation = { m_QuadOffsetX, 0.0f, 0.0f };
+    m_QuadTransform.Rotation = { 0.0f, 0.0f, m_QuadRotation };
+    const float scalePulse = 1.0f + 0.15f * std::sin(m_QuadRotation * 1.3f);
+    m_QuadTransform.Scale = { scalePulse, scalePulse, 1.0f };
 }

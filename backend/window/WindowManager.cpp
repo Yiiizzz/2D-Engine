@@ -41,9 +41,15 @@ bool WindowManager::Init(const WindowSpecification& specification) {
 
     glfwSetWindowUserPointer(m_Window, this);
     glfwSetFramebufferSizeCallback(m_Window, FramebufferSizeCallback);
+    glfwSetScrollCallback(m_Window, ScrollCallback);
 
     m_Context = GraphicsContext::Create(m_Window, m_Specification.API);
     m_Context->Init();
+    int framebufferWidth = 0;
+    int framebufferHeight = 0;
+    glfwGetFramebufferSize(m_Window, &framebufferWidth, &framebufferHeight);
+    m_FramebufferWidth = framebufferWidth > 0 ? static_cast<unsigned int>(framebufferWidth) : 0U;
+    m_FramebufferHeight = framebufferHeight > 0 ? static_cast<unsigned int>(framebufferHeight) : 0U;
     SetVSync(m_Specification.VSync);
     m_Initialized = true;
     return true;
@@ -121,6 +127,26 @@ unsigned int WindowManager::GetHeight() const {
     return m_Specification.Height;
 }
 
+unsigned int WindowManager::GetFramebufferWidth() const {
+    return m_FramebufferWidth;
+}
+
+unsigned int WindowManager::GetFramebufferHeight() const {
+    return m_FramebufferHeight;
+}
+
+bool WindowManager::IsMinimized() const {
+    return m_FramebufferWidth == 0 || m_FramebufferHeight == 0;
+}
+
+void WindowManager::SetFramebufferResizeCallback(FramebufferResizeCallback callback) {
+    m_FramebufferResizeCallback = std::move(callback);
+}
+
+void WindowManager::SetMouseScrollCallback(MouseScrollCallback callback) {
+    m_MouseScrollCallback = std::move(callback);
+}
+
 GraphicsAPI WindowManager::GetGraphicsAPI() const {
     return m_Specification.API;
 }
@@ -135,6 +161,25 @@ void WindowManager::FramebufferSizeCallback(GLFWwindow* window, int width, int h
         return;
     }
 
-    windowManager->m_Specification.Width = width > 0 ? static_cast<unsigned int>(width) : 1U;
-    windowManager->m_Specification.Height = height > 0 ? static_cast<unsigned int>(height) : 1U;
+    windowManager->m_FramebufferWidth = width > 0 ? static_cast<unsigned int>(width) : 0U;
+    windowManager->m_FramebufferHeight = height > 0 ? static_cast<unsigned int>(height) : 0U;
+
+    int windowWidth = 0;
+    int windowHeight = 0;
+    glfwGetWindowSize(window, &windowWidth, &windowHeight);
+    windowManager->m_Specification.Width = windowWidth > 0 ? static_cast<unsigned int>(windowWidth) : 0U;
+    windowManager->m_Specification.Height = windowHeight > 0 ? static_cast<unsigned int>(windowHeight) : 0U;
+
+    if (windowManager->m_FramebufferResizeCallback) {
+        windowManager->m_FramebufferResizeCallback(windowManager->m_FramebufferWidth, windowManager->m_FramebufferHeight);
+    }
+}
+
+void WindowManager::ScrollCallback(GLFWwindow* window, double xOffset, double yOffset) {
+    auto* windowManager = static_cast<WindowManager*>(glfwGetWindowUserPointer(window));
+    if (windowManager == nullptr || !windowManager->m_MouseScrollCallback) {
+        return;
+    }
+
+    windowManager->m_MouseScrollCallback(static_cast<float>(xOffset), static_cast<float>(yOffset));
 }

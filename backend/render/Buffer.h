@@ -1,10 +1,10 @@
 #pragma once
 
 #include <initializer_list>
-#include <memory>
 #include <string>
 #include <vector>
 
+#include "../core/Ref.h"
 #include "RendererAPI.h"
 
 enum class ShaderDataType {
@@ -12,7 +12,14 @@ enum class ShaderDataType {
     Float,
     Float2,
     Float3,
-    Float4
+    Float4,
+    Mat3,
+    Mat4,
+    Int,
+    Int2,
+    Int3,
+    Int4,
+    Bool
 };
 
 unsigned int ShaderDataTypeSize(ShaderDataType type);
@@ -37,6 +44,8 @@ public:
 
     const std::vector<BufferElement>& GetElements() const;
     unsigned int GetStride() const;
+    std::vector<BufferElement>::const_iterator begin() const;
+    std::vector<BufferElement>::const_iterator end() const;
 
 private:
     void CalculateOffsetsAndStride();
@@ -55,7 +64,7 @@ public:
     virtual void SetLayout(const BufferLayout& layout) = 0;
     virtual const BufferLayout& GetLayout() const = 0;
 
-    static std::shared_ptr<VertexBuffer> Create(const float* vertices, unsigned int sizeInBytes);
+    static Ref<VertexBuffer> Create(const float* vertices, unsigned int sizeInBytes);
 };
 
 class IndexBuffer {
@@ -66,5 +75,5 @@ public:
     virtual void Unbind() const = 0;
     virtual unsigned int GetCount() const = 0;
 
-    static std::shared_ptr<IndexBuffer> Create(const unsigned int* indices, unsigned int count);
+    static Ref<IndexBuffer> Create(const unsigned int* indices, unsigned int count);
 };

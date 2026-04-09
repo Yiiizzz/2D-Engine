@@ -6,10 +6,10 @@
 
 GraphicsAPI RendererAPI::s_API = GraphicsAPI::OpenGL;
 
-std::unique_ptr<RendererAPI> RendererAPI::Create(GraphicsAPI api) {
+Scope<RendererAPI> RendererAPI::Create(GraphicsAPI api) {
     switch (api) {
     case GraphicsAPI::OpenGL:
-        return std::make_unique<OpenGLRendererAPI>();
+        return CreateScope<OpenGLRendererAPI>();
     case GraphicsAPI::Vulkan:
     case GraphicsAPI::DX12:
     case GraphicsAPI::None:

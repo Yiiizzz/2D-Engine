@@ -1,7 +1,6 @@
 #pragma once
 
-#include <memory>
-
+#include "../core/Ref.h"
 #include "RendererAPI.h"
 
 class RenderCommand {
@@ -13,5 +12,5 @@ public:
     static void DrawIndexed(const VertexArray& vertexArray, unsigned int indexCount = 0);
 
 private:
-    static std::unique_ptr<RendererAPI> s_RendererAPI;
+    static Scope<RendererAPI> s_RendererAPI;
 };

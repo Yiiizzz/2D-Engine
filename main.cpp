@@ -1,5 +1,4 @@
 #include "backend/core/Engine.h"
-#include "frontend/src/editor/EditorUI.h"
 
 int main() {
     Engine engine;

@@ -6,6 +6,7 @@
 #include <array>
 #include <cstdio>
 #include <cstring>
+#include <string>
 
 namespace {
 
@@ -51,15 +52,17 @@ void DrawInspectorPanel(SceneState& sceneState, EditorState& editorState)
 
     static int lastSelectedIndex = -1;
     static char textureBuffer[128] = "";
+    static std::string lastTexturePath;
 
     const int index = editorState.selectedObjectIndex;
     if (index >= 0 && index < static_cast<int>(sceneState.objects.size())) {
         GameObject& obj = sceneState.objects[index];
 
-        if (lastSelectedIndex != index) {
+        if (lastSelectedIndex != index || lastTexturePath != obj.texturePath) {
             std::strncpy(textureBuffer, obj.texturePath.c_str(), sizeof(textureBuffer));
             textureBuffer[sizeof(textureBuffer) - 1] = '\0';
             lastSelectedIndex = index;
+            lastTexturePath = obj.texturePath;
         }
 
         std::array<char, 128> nameBuffer{};
@@ -79,7 +82,37 @@ void DrawInspectorPanel(SceneState& sceneState, EditorState& editorState)
             if (ImGui::InputText("##InspectorTexturePath", textureBuffer, sizeof(textureBuffer))) {
                 obj.texturePath = textureBuffer;
                 const AssetRecord* record = editorState.assetRegistry.findByPath(obj.texturePath);
-                obj.textureResourceId = record ? record->id : 0;
+                obj.textureResourceId = (record && record->type == AssetType::Texture) ? record->id : 0;
+                lastTexturePath = obj.texturePath;
+            }
+
+            ImGui::TextUnformatted("Texture Asset");
+            const char* currentTextureLabel = obj.texturePath.empty() ? "None" : obj.texturePath.c_str();
+            if (ImGui::BeginCombo("##InspectorTextureAsset", currentTextureLabel)) {
+                const bool noTextureSelected = obj.texturePath.empty();
+                if (ImGui::Selectable("None", noTextureSelected)) {
+                    obj.textureResourceId = 0;
+                    obj.texturePath.clear();
+                    textureBuffer[0] = '\0';
+                    lastTexturePath.clear();
+                }
+
+                for (const AssetRecord& asset : editorState.assetRegistry.getAssets()) {
+                    if (asset.type != AssetType::Texture) {
+                        continue;
+                    }
+
+                    const std::string label = asset.relativePath.empty() ? asset.name : asset.relativePath;
+                    const bool selected = (obj.textureResourceId == asset.id) || (obj.texturePath == label) || (obj.texturePath == asset.sourcePath);
+                    if (ImGui::Selectable(label.c_str(), selected)) {
+                        obj.textureResourceId = asset.id;
+                        obj.texturePath = label;
+                        std::strncpy(textureBuffer, obj.texturePath.c_str(), sizeof(textureBuffer));
+                        textureBuffer[sizeof(textureBuffer) - 1] = '\0';
+                        lastTexturePath = obj.texturePath;
+                    }
+                }
+                ImGui::EndCombo();
             }
 
             ImGui::TextWrapped("Bound Texture: %s", obj.texturePath.empty() ? "None" : obj.texturePath.c_str());
@@ -162,6 +195,7 @@ void DrawInspectorPanel(SceneState& sceneState, EditorState& editorState)
         ImGui::Separator();
         ImGui::TextWrapped("Select a GameObject in Hierarchy or Scene to edit its transform and bindings here.");
         lastSelectedIndex = -1;
+        lastTexturePath.clear();
     }
 
     ImGui::PopItemWidth();

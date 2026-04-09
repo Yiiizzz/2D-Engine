@@ -1,5 +1,5 @@
 ﻿cmake_minimum_required(VERSION 3.16)
-project(SDLTest)
+project(LancelotEngine LANGUAGES C CXX)
 
 if (POLICY CMP0141)
     cmake_policy(SET CMP0141 NEW)
@@ -11,8 +11,10 @@ endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-# SDL3 / SDL3_image
+find_package(OpenGL REQUIRED)
+
 add_subdirectory(external/SDL)
 
 set(SDLIMAGE_VENDORED OFF CACHE BOOL "" FORCE)
@@ -20,77 +22,103 @@ set(SDLIMAGE_SAMPLES OFF CACHE BOOL "" FORCE)
 set(SDLIMAGE_TESTS OFF CACHE BOOL "" FORCE)
 add_subdirectory(external/SDL_image)
 
-# 头文件目录
-include_directories(
-    ${CMAKE_SOURCE_DIR}/include
-    ${CMAKE_SOURCE_DIR}/src
-    ${CMAKE_SOURCE_DIR}/external/imgui
-    ${CMAKE_SOURCE_DIR}/external/json-develop/single_include
-)
+if (EXISTS "${CMAKE_SOURCE_DIR}/external/glfw/CMakeLists.txt")
+    add_subdirectory(external/glfw)
+endif()
 
-# 可执行程序
-add_executable(SDLTest
-    # 主文件
+if (EXISTS "${CMAKE_SOURCE_DIR}/external/glad/CMakeLists.txt")
+    add_subdirectory(external/glad)
+elseif (EXISTS "${CMAKE_SOURCE_DIR}/external/glad/src/glad.c")
+    add_library(glad STATIC external/glad/src/glad.c)
+    target_include_directories(glad PUBLIC external/glad/include)
+endif()
+
+if (TARGET glfw)
+    set(LANCELOT_GLFW_TARGET glfw)
+elseif (TARGET glfw3::glfw)
+    set(LANCELOT_GLFW_TARGET glfw3::glfw)
+else()
+    find_package(glfw3 REQUIRED)
+    if (TARGET glfw)
+        set(LANCELOT_GLFW_TARGET glfw)
+    elseif (TARGET glfw3::glfw)
+        set(LANCELOT_GLFW_TARGET glfw3::glfw)
+    else()
+        message(FATAL_ERROR "GLFW target was not found. Provide external/glfw or install glfw3.")
+    endif()
+endif()
+
+if (TARGET glad)
+    set(LANCELOT_GLAD_TARGET glad)
+elseif (TARGET glad::glad)
+    set(LANCELOT_GLAD_TARGET glad::glad)
+else()
+    find_package(glad CONFIG REQUIRED)
+    if (TARGET glad)
+        set(LANCELOT_GLAD_TARGET glad)
+    elseif (TARGET glad::glad)
+        set(LANCELOT_GLAD_TARGET glad::glad)
+    else()
+        message(FATAL_ERROR "GLAD target was not found. Provide external/glad or install glad.")
+    endif()
+endif()
+
+add_executable(LancelotEngine
     main.cpp
-
-    # backend 文件夹（你最新的路径）
     backend/core/Engine.cpp
-    backend/window/WindowManager.cpp
-    backend/render/Renderer2D.cpp
-    backend/resource/TextureManager.cpp
-    backend/input/InputManager.cpp
     backend/core/GameLoop.cpp
-    backend/project/ProjectManager.cpp
-    backend/script/ScriptRuntime.cpp
+    backend/window/WindowManager.cpp
+    backend/input/InputManager.cpp
+    backend/render/GraphicsContext.cpp
+    backend/render/RendererAPI.cpp
+    backend/render/RenderCommand.cpp
+    backend/render/Renderer.cpp
+    backend/render/Renderer2D.cpp
+    backend/render/Buffer.cpp
+    backend/render/VertexArray.cpp
+    backend/render/Shader.cpp
+    backend/render/OrthographicCamera.cpp
     backend/resource/ResourceManager.cpp
     backend/resource/AssetRegistry.cpp
     backend/resource/ResourcePathUtils.cpp
-    backend/resource/Sprite.cpp
+    backend/project/ProjectManager.cpp
+    backend/script/ScriptRuntime.cpp
     backend/SceneSerializer.cpp
-
-    # frontend 编辑器
+    backend/platform/opengl/OpenGLContext.cpp
+    backend/platform/opengl/OpenGLRendererAPI.cpp
+    backend/platform/opengl/OpenGLBuffer.cpp
+    backend/platform/opengl/OpenGLVertexArray.cpp
+    backend/platform/opengl/OpenGLShader.cpp
+    backend/platform/imgui/ImGuiLayer.cpp
     frontend/src/editor/EditorUI.cpp
     frontend/src/editor/Panels/ScenePanel.cpp
     frontend/src/editor/Panels/AssetPanel.cpp
-    frontend/src/editor/Panels/HierarchyPanel.cpp 
-    frontend/src/editor/Panels/InspectorPanel.cpp 
+    frontend/src/editor/Panels/HierarchyPanel.cpp
+    frontend/src/editor/Panels/InspectorPanel.cpp
     frontend/src/editor/Panels/ConsolePanel.cpp
-
-    # ImGui 核心 【正确写法：一行一个，不要引号！】
     external/imgui/imgui.cpp
     external/imgui/imgui_demo.cpp
     external/imgui/imgui_draw.cpp
     external/imgui/imgui_tables.cpp
     external/imgui/imgui_widgets.cpp
-
-    # ImGui SDL3 后端
-    external/imgui/backends/imgui_impl_sdl3.cpp
-    external/imgui/backends/imgui_impl_sdlrenderer3.cpp
 )
 
-# 链接库
-target_link_libraries(SDLTest PRIVATE
+target_include_directories(LancelotEngine PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/backend
+    ${CMAKE_SOURCE_DIR}/external
+    ${CMAKE_SOURCE_DIR}/external/imgui
+    ${CMAKE_SOURCE_DIR}/external/json-develop/single_include
+)
+
+target_link_libraries(LancelotEngine PRIVATE
+    ${LANCELOT_GLFW_TARGET}
+    ${LANCELOT_GLAD_TARGET}
     SDL3::SDL3
     SDL3_image::SDL3_image
-    Ole32
-)
-# 复制 asset 文件夹到 exe 目录
-add_custom_command(TARGET SDLTest POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_SOURCE_DIR}/asset
-        $<TARGET_FILE_DIR:SDLTest>/asset
+    OpenGL::GL
 )
 
-# 自动复制 SDL3.dll 到 exe 目录
-add_custom_command(TARGET SDLTest POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        $<TARGET_FILE:SDL3::SDL3>
-        $<TARGET_FILE_DIR:SDLTest>
-)
-
-# 自动复制 SDL3_image.dll 到 exe 目录
-add_custom_command(TARGET SDLTest POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        $<TARGET_FILE:SDL3_image::SDL3_image>
-        $<TARGET_FILE_DIR:SDLTest>
-)
+if (MSVC)
+    target_compile_definitions(LancelotEngine PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()

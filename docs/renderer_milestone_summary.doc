@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>Renderer Milestone Summary</title>
+  <style>
+    body {
+      font-family: "Microsoft YaHei", "SimSun", sans-serif;
+      line-height: 1.7;
+      margin: 40px;
+      color: #222;
+    }
+    h1, h2, h3 {
+      color: #1f3a5f;
+    }
+    h1 {
+      text-align: center;
+      margin-bottom: 12px;
+    }
+    .subtitle {
+      text-align: center;
+      color: #555;
+      margin-bottom: 28px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0 24px 0;
+    }
+    th, td {
+      border: 1px solid #bbb;
+      padding: 8px 10px;
+      vertical-align: top;
+    }
+    th {
+      background: #eef3f8;
+    }
+    ul {
+      margin-top: 8px;
+    }
+    .section {
+      margin-bottom: 28px;
+    }
+  </style>
+</head>
+<body>
+  <h1>渲染模块阶段性改造总结</h1>
+  <div class="subtitle">面向分层引擎架构的 Renderer / Renderer2D / Shader / Texture / CameraController 演进说明</div>
+
+  <div class="section">
+    <h2>1. 项目改造目标概述</h2>
+    <p>
+      本阶段工作的核心目标，不是单纯“把一个三角形或四边形画出来”，而是围绕引擎架构逐步建立一套可扩展、
+      可维护、可替换后端的渲染基础设施。整体改造遵循如下分层设计：
+    </p>
+    <ul>
+      <li>高层：Renderer / Renderer2D，负责场景提交与 2D 渲染入口</li>
+      <li>中间层：RenderCommand / RendererAPI，负责抽象统一的渲染命令</li>
+      <li>资源层：Buffer / VertexArray / Shader / Material / Texture</li>
+      <li>后端层：OpenGLContext / OpenGLRendererAPI / OpenGLBuffer / OpenGLVertexArray / OpenGLShader / OpenGLTexture</li>
+      <li>应用层：Application / Sandbox 风格逻辑，负责临时验证内容、输入控制、运行时交互</li>
+    </ul>
+    <p>
+      因此，本轮改造真正完成的是“架构能力建设”，包括 shader 文件资产化、资源管理入口、2D 渲染骨架、
+      相机控制器、窗口缩放与最小化安全处理等，而不是只做一个静态 demo。
+    </p>
+  </div>
+
+  <div class="section">
+    <h2>2. 主要改动变化</h2>
+    <table>
+      <tr>
+        <th>模块</th>
+        <th>改动内容</th>
+        <th>改动意义</th>
+      </tr>
+      <tr>
+        <td>Renderer / RenderCommand / RendererAPI</td>
+        <td>完善了高层渲染提交流与后端命令转发关系，保持高层代码不直接依赖 OpenGL。</td>
+        <td>为未来 Vulkan / DX12 替换后端预留了稳定边界。</td>
+      </tr>
+      <tr>
+        <td>BufferLayout / VertexArray</td>
+        <td>补全顶点布局描述系统，统一通过 BufferLayout 描述顶点格式，并在 OpenGLVertexArray 中自动解析 attribute。</td>
+        <td>消除了高层手写 attribute 指针配置的耦合，方便后续支持更复杂顶点格式。</td>
+      </tr>
+      <tr>
+        <td>Shader / ShaderLibrary</td>
+        <td>将硬编码 GLSL 字符串迁移为 shader 资产文件，支持 <code>#type vertex</code> / <code>#type fragment</code> 解析，并引入 ShaderLibrary 管理加载与查找。</td>
+        <td>提高 shader 维护性，避免 C++ 文件被大量 GLSL 字符串污染，也为后续 shader 资源化管理打基础。</td>
+      </tr>
+      <tr>
+        <td>Material</td>
+        <td>新增 Material 作为 Shader + Uniform 状态的薄封装，并支持颜色、矩阵、纹理等参数绑定。</td>
+        <td>将“着色器 + 参数设置”从应用层手工调用中抽离，形成更接近引擎资源语义的提交流。</td>
+      </tr>
+      <tr>
+        <td>Texture2D</td>
+        <td>新增 API 无关 Texture 抽象和 OpenGLTexture2D 实现，支持从文件加载图片并上传 GPU。</td>
+        <td>为后续精灵、UI、图集等纹理型渲染提供基础资源能力。</td>
+      </tr>
+      <tr>
+        <td>Renderer2D</td>
+        <td>引入最小 Renderer2D 骨架，提供 BeginScene / DrawQuad / EndScene API。</td>
+        <td>把 2D 渲染入口从 Application 中剥离出来，形成未来批处理、统计、贴图槽管理的扩展点。</td>
+      </tr>
+      <tr>
+        <td>OrthographicCamera / Controller</td>
+        <td>补齐正交相机状态，新增 OrthographicCameraController，负责 WASD 平移、Q/E 旋转、滚轮缩放、resize 投影更新。</td>
+        <td>实现了“相机数学”和“交互控制”职责分离，提高复用性与可维护性。</td>
+      </tr>
+      <tr>
+        <td>WindowManager / Resize Path</td>
+        <td>新增 framebuffer 尺寸追踪、scroll 回调、resize 回调、最小化状态判断。</td>
+        <td>让真实渲染尺寸与 camera projection、viewport 更新路径连接起来，增强高 DPI / 最小化情况下的稳定性。</td>
+      </tr>
+      <tr>
+        <td>Ref / Scope</td>
+        <td>统一引入 Ref / Scope 智能指针别名与创建助手。</td>
+        <td>规范资源拥有关系，降低渲染资源管理语义混乱问题。</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>3. 算法与设计创新点</h2>
+
+    <h3>3.1 基于分层架构的渲染命令解耦</h3>
+    <p>
+      本次工作中最核心的创新点，不是某个复杂数学公式，而是将渲染流程重构为“高层提交 - 中间命令抽象 - 后端执行”
+      的稳定分层模型。这样做的价值在于：
+    </p>
+    <ul>
+      <li>高层 Renderer / Renderer2D 不感知 OpenGL 的具体函数调用</li>
+      <li>RenderCommand 作为统一转发入口，封装通用绘制命令</li>
+      <li>RendererAPI 定义后端契约，OpenGLRendererAPI 只负责落地执行</li>
+      <li>后续替换 Vulkan 或 DX12 时，理论上只需补同层实现，而不是大面积重写上层逻辑</li>
+    </ul>
+    <p>
+      这是一种“架构级算法优化”，本质是在复杂度管理层面降低后续扩展成本。
+    </p>
+
+    <h3>3.2 BufferLayout 驱动的顶点输入配置</h3>
+    <p>
+      传统小 demo 往往直接在业务代码中硬编码顶点 attribute 格式。本次改造使用 BufferLayout 作为统一描述，
+      由 VertexArray 在后端读取布局并自动配置顶点属性。其创新点在于：
+    </p>
+    <ul>
+      <li>顶点数据格式从“手写 OpenGL 配置”提升为“引擎侧声明式描述”</li>
+      <li>顶点输入配置从业务层移到资源抽象层</li>
+      <li>后续支持颜色、法线、UV、矩阵实例化输入时，扩展成本更低</li>
+    </ul>
+
+    <h3>3.3 相机控制与相机数学解耦</h3>
+    <p>
+      OrthographicCamera 只负责维护投影矩阵、观察矩阵、视图投影矩阵；
+      OrthographicCameraController 单独处理输入、缩放、旋转、长宽比更新。
+      这个拆分的创新点在于：
+    </p>
+    <ul>
+      <li>相机对象保持纯数学和状态，不掺杂输入逻辑</li>
+      <li>控制器可以被 Sandbox、Editor 或 Runtime 单独复用</li>
+      <li>未来替换输入系统或增加编辑器相机控制，不需要修改相机核心类</li>
+    </ul>
+
+    <h3>3.4 Shader 资产化与轻量级 ShaderLibrary</h3>
+    <p>
+      将 shader 从硬编码字符串迁移到外部资产文件，是一次重要的工程化升级。通过
+      <code>#type</code> 分段解析机制，实现了单文件多阶段 shader 管理，同时引入 ShaderLibrary 统一加载与缓存。
+      这一点的创新在于：
+    </p>
+    <ul>
+      <li>降低 shader 修改成本，提高调试与维护效率</li>
+      <li>避免业务层重复创建同一 shader 资源</li>
+      <li>为未来扩展 AssetManager 奠定轻量前置结构</li>
+    </ul>
+
+    <h3>3.5 Material 作为中间抽象层</h3>
+    <p>
+      本轮加入的 Material 并不是复杂 PBR 材质系统，而是一个“Shader + Uniform 状态 + 纹理绑定”的最小可用模型。
+      它的意义在于：
+    </p>
+    <ul>
+      <li>减少应用层反复手写 uniform 上传代码</li>
+      <li>把颜色、矩阵、采样器等状态组织到统一资源语义中</li>
+      <li>为未来从简单材质迈向真正渲染管线资源体系铺路</li>
+    </ul>
+  </div>
+
+  <div class="section">
+    <h2>4. 本阶段主要解决的问题</h2>
+    <table>
+      <tr>
+        <th>问题</th>
+        <th>解决方案</th>
+        <th>效果</th>
+      </tr>
+      <tr>
+        <td>高层引擎逻辑与 OpenGL 耦合较强</td>
+        <td>引入 Renderer / RenderCommand / RendererAPI / OpenGLRendererAPI 分层。</td>
+        <td>高层渲染逻辑可以保持 API 无关。</td>
+      </tr>
+      <tr>
+        <td>顶点输入格式配置分散、易错</td>
+        <td>引入 ShaderDataType + BufferElement + BufferLayout + VertexArray 自动解析。</td>
+        <td>顶点属性描述统一、可扩展。</td>
+      </tr>
+      <tr>
+        <td>Shader 硬编码在 C++ 中，维护成本高</td>
+        <td>迁移到 assets/shaders 外部文件，支持单文件多阶段解析。</td>
+        <td>shader 编辑更直观，结构更接近真实引擎。</td>
+      </tr>
+      <tr>
+        <td>Shader 资源缺少集中管理</td>
+        <td>增加 ShaderLibrary 统一 Load / Get / Exists。</td>
+        <td>避免重复加载，提高资源组织能力。</td>
+      </tr>
+      <tr>
+        <td>材质参数设置分散在应用逻辑里</td>
+        <td>引入 Material 统一管理 Shader 与 Uniform 状态。</td>
+        <td>提高提交路径可读性，降低重复代码。</td>
+      </tr>
+      <tr>
+        <td>相机逻辑和输入行为容易混在一起</td>
+        <td>OrthographicCamera 只保留数学状态，新增 OrthographicCameraController 处理控制行为。</td>
+        <td>职责边界更清晰，后续扩展更容易。</td>
+      </tr>
+      <tr>
+        <td>窗口 resize 后 viewport 与 projection 更新不一致</td>
+        <td>新增 framebuffer resize 回调，统一驱动 Renderer viewport 与 CameraController projection 更新。</td>
+        <td>窗口缩放后画面范围和比例保持正确。</td>
+      </tr>
+      <tr>
+        <td>最小化或零尺寸窗口可能导致非法计算</td>
+        <td>引入真实 framebuffer 尺寸检测，0 宽高时跳过渲染并避免更新非法投影。</td>
+        <td>窗口最小化不会崩溃，恢复后可继续正常渲染。</td>
+      </tr>
+      <tr>
+        <td>纹理与透明 PNG 渲染链路不完整</td>
+        <td>增加 Texture2D 抽象、OpenGLTexture2D 上传、Material 纹理绑定与 backend blending 初始化。</td>
+        <td>具备基本纹理渲染与透明混合能力。</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>5. 当前形成的运行验证路径</h2>
+    <p>当前项目已经形成如下较完整的验证链路：</p>
+    <ul>
+      <li>窗口与 OpenGL 上下文创建</li>
+      <li>Renderer / Renderer2D 初始化</li>
+      <li>Shader 资产文件加载与 ShaderLibrary 管理</li>
+      <li>OrthographicCameraController 输入控制</li>
+      <li>BeginScene(camera) -> DrawQuad(...) -> EndScene() 提交流程</li>
+      <li>Resize 后 viewport 与 projection 同步更新</li>
+      <li>窗口最小化时跳过无效渲染</li>
+    </ul>
+    <p>
+      这说明当前引擎已经从“单纯能画出图形”演进为“具备基础交互、资源组织、渲染抽象和运行时稳定性”的原型阶段。
+    </p>
+  </div>
+
+  <div class="section">
+    <h2>6. 后续可延伸方向</h2>
+    <p>在不推翻现有结构的前提下，后续可以自然延伸到以下方向：</p>
+    <ul>
+      <li>Renderer2D 批处理（Batching）</li>
+      <li>纹理槽管理与多纹理提交</li>
+      <li>SubTexture / 图集支持</li>
+      <li>更正式的 AssetManager</li>
+      <li>Framebuffer 抽象</li>
+      <li>编辑器 Scene Viewport 与运行时渲染路径统一</li>
+      <li>Vulkan / DX12 后端补齐</li>
+    </ul>
+    <p>
+      也就是说，当前工作已经把最难的“结构地基”基本搭起来了，后续新增功能将更多是“沿现有架构扩展”，而不是重新返工。
+    </p>
+  </div>
+
+  <div class="section">
+    <h2>7. 总结</h2>
+    <p>
+      本阶段工作的价值，主要体现在两个层面：
+    </p>
+    <ul>
+      <li>从功能层看，项目已经具备了基础的 2D 渲染、相机控制、shader 资产化、纹理支持、透明混合与窗口健壮性。</li>
+      <li>从工程层看，项目已经形成了较清晰的分层架构、资源抽象边界与后续可扩展的演进路线。</li>
+    </ul>
+    <p>
+      因此，这次改造的真正成果，不只是“看到一个会动的 quad”，而是让引擎从 demo 风格代码，逐渐进入“可持续演进的引擎雏形”状态。
+    </p>
+  </div>
+</body>
+</html>

@@ -2,6 +2,7 @@
 #include <SDL3/SDL.h>
 #include "../core/SceneState.h"
 #include "../resource/ResourceManager.h"
+#include "../../frontend/src/EditorState.h"
 
 class Renderer2D {
 private:
@@ -16,7 +17,7 @@ public:
     void clear();
     void drawTexture(SDL_Texture* texture);
     bool resizeSceneRenderTarget(int width, int height);
-    void renderScene(const SceneState& sceneState, ResourceManager& resourceManager);
+    void renderScene(const SceneState& sceneState, const EditorState& editorState, ResourceManager& resourceManager);
     SDL_Texture* getSceneRenderTarget() const;
     void present();
     void destroy();

@@ -68,7 +68,7 @@ bool Renderer2D::resizeSceneRenderTarget(int width, int height) {
     return true;
 }
 
-void Renderer2D::renderScene(const SceneState& sceneState, ResourceManager& resourceManager) {
+void Renderer2D::renderScene(const SceneState& sceneState, const EditorState& editorState, ResourceManager& resourceManager) {
     if (!sceneRenderTarget) {
         return;
     }
@@ -82,10 +82,10 @@ void Renderer2D::renderScene(const SceneState& sceneState, ResourceManager& reso
         if (!texture) continue;
 
         SDL_FRect dst;
-        dst.x = obj.position[0];
-        dst.y = obj.position[1];
-        dst.w = 64.0f * obj.scale[0];
-        dst.h = 64.0f * obj.scale[1];
+        dst.x = obj.position[0] * editorState.sceneViewZoom + editorState.sceneViewOffsetX;
+        dst.y = obj.position[1] * editorState.sceneViewZoom + editorState.sceneViewOffsetY;
+        dst.w = 64.0f * obj.scale[0] * editorState.sceneViewZoom;
+        dst.h = 64.0f * obj.scale[1] * editorState.sceneViewZoom;
 
         SDL_RenderTextureRotated(renderer, texture, nullptr, &dst, static_cast<double>(obj.rotation), nullptr, SDL_FLIP_NONE);
     }

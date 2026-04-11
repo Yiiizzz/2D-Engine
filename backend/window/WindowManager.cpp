@@ -9,12 +9,14 @@ bool WindowManager::init(const std::string& title, int width, int height) {
         return false;
     }
 
-    window = SDL_CreateWindow(title.c_str(), width, height, SDL_WINDOW_RESIZABLE);
+    window = SDL_CreateWindow(title.c_str(), width, height, SDL_WINDOW_RESIZABLE | SDL_WINDOW_MAXIMIZED);
     if (!window) {
         std::cerr << "SDL_CreateWindow failed: " << SDL_GetError() << std::endl;
         SDL_Quit();
         return false;
     }
+
+    SDL_MaximizeWindow(window);
 
     return true;
 }

@@ -3,6 +3,7 @@
 #include "../render/Renderer2D.h"
 #include "../input/InputManager.h"
 #include "../resource/ResourceManager.h"
+#include "../platform/imgui/ImGuiLayer.h"
 #include "../project/ProjectManager.h"
 #include "../core/GameLoop.h"
 #include "../core/SceneState.h"
@@ -14,13 +15,14 @@ private:
     Renderer2D renderer2D;
     InputManager inputManager;
     ResourceManager resourceManager;
+    ImGuiLayer imguiLayer;
     SceneState sceneState;
     EditorState editorState;
     GameLoop gameLoop;
     bool running;
     SceneState playModeSceneBackup;
     bool hasPlayModeBackup = false;
-    Uint64 lastProjectSyncTick = 0;
+    unsigned long long lastProjectSyncTick = 0;
 
 public:
     Engine();

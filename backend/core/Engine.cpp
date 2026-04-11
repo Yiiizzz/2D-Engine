@@ -3,13 +3,14 @@
 #include "../../frontend/src/editor/EditorActions.h"
 #include "../../frontend/src/editor/EditorUI.h"
 #include "../SceneSerializer.h"
+#include "../render/Renderer.h"
 
-#include <SDL3/SDL.h>
-#include <backends/imgui_impl_sdl3.h>
-#include <backends/imgui_impl_sdlrenderer3.h>
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>
 #include <imgui.h>
 
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -30,24 +31,32 @@ Engine::Engine() : running(false) {}
 extern void SetupEditorStyle();
 
 bool Engine::init() {
-    if (!windowManager.init("SDL3 Window Control Demo", 800, 600)) {
+    WindowSpecification windowSpecification;
+    windowSpecification.Title = "Lancelot Editor";
+    windowSpecification.Width = 1280;
+    windowSpecification.Height = 720;
+    windowSpecification.API = GraphicsAPI::OpenGL;
+
+    if (!windowManager.Init(windowSpecification)) {
         return false;
     }
 
-    if (!renderer2D.init(windowManager.getWindow())) {
+    Renderer::Init(windowManager.GetGraphicsAPI());
+    Renderer::OnWindowResize(windowManager.GetWidth(), windowManager.GetHeight());
+
+    if (!renderer2D.init(windowManager.GetNativeWindow())) {
         return false;
     }
 
-    resourceManager.setRenderer(renderer2D.getRenderer());
     configureResourceSearchPaths();
 
-    ImGui::CreateContext();
+    if (!imguiLayer.Init(windowManager.GetNativeWindow())) {
+        return false;
+    }
     ImGui::StyleColorsDark();
     SetupEditorStyle();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-    ImGui_ImplSDL3_InitForSDLRenderer(windowManager.getWindow(), renderer2D.getRenderer());
-    ImGui_ImplSDLRenderer3_Init(renderer2D.getRenderer());
 
     const AssetRecord* defaultTexture = editorState.assetRegistry.findByPath("pillar.png");
     const std::uint64_t defaultTextureId = defaultTexture ? defaultTexture->id : 0;
@@ -75,7 +84,6 @@ void Engine::handleEditorCommands()
 {
     switch (editorState.pendingCommand) {
     case EditorCommand::Play:
-        SDL_Log("[Engine] Play command received");
         if (editorState.mode == EditorMode::Edit) {
             playModeSceneBackup = sceneState;
             hasPlayModeBackup = true;
@@ -85,7 +93,6 @@ void Engine::handleEditorCommands()
         break;
 
     case EditorCommand::Pause:
-        SDL_Log("[Engine] Pause command received");
         if (editorState.mode == EditorMode::Play) {
             editorState.mode = EditorMode::Pause;
             AddEditorLog(editorState, EditorLogLevel::Info, "Paused Play mode.");
@@ -97,7 +104,6 @@ void Engine::handleEditorCommands()
         break;
 
     case EditorCommand::Stop:
-        SDL_Log("[Engine] Stop command received");
         if (hasPlayModeBackup) {
             sceneState = playModeSceneBackup;
             hasPlayModeBackup = false;
@@ -202,7 +208,9 @@ bool Engine::openProject(const ProjectDescriptor& project) {
     editorState.assetStatus = editorState.assetRegistry.getAssetCount() > 0
         ? "Project assets loaded"
         : "Project opened with no imported assets yet";
-    lastProjectSyncTick = SDL_GetTicks();
+    lastProjectSyncTick = static_cast<unsigned long long>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
     AddEditorLog(editorState, EditorLogLevel::Info, editorState.projectStatus);
     return true;
 }
@@ -246,7 +254,9 @@ void Engine::syncProjectAssets(bool force) {
         return;
     }
 
-    const Uint64 now = SDL_GetTicks();
+    const auto nowPoint = std::chrono::steady_clock::now();
+    const unsigned long long now = static_cast<unsigned long long>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(nowPoint.time_since_epoch()).count());
     if (!force && now - lastProjectSyncTick < 1000) {
         return;
     }
@@ -329,10 +339,21 @@ void Engine::handleProjectCommands() {
 
 void Engine::run() {
     while (running) {
+        windowManager.PollEvents();
         inputManager.processEvents(windowManager, sceneState, editorState);
         if (inputManager.shouldQuit()) {
             running = false;
         }
+
+        imguiLayer.BeginFrame();
+
+        renderer2D.clear();
+        renderer2D.resizeSceneRenderTarget(
+            static_cast<int>(editorState.sceneViewportWidth),
+            static_cast<int>(editorState.sceneViewportHeight)
+        );
+        renderer2D.renderScene(sceneState, resourceManager);
+        DrawEditorUI(sceneState, editorState, renderer2D.getSceneViewportImage());
 
         handleEditorCommands();
         handleProjectCommands();
@@ -341,22 +362,8 @@ void Engine::run() {
         gameLoop.update(sceneState, editorState);
         refreshSceneViewTransform();
 
-        renderer2D.resizeSceneRenderTarget(
-            std::max(1, static_cast<int>(editorState.sceneViewportWidth)),
-            std::max(1, static_cast<int>(editorState.sceneViewportHeight))
-        );
-        renderer2D.renderScene(sceneState, editorState, resourceManager);
-
-        ImGui_ImplSDL3_NewFrame();
-        ImGui_ImplSDLRenderer3_NewFrame();
-        ImGui::NewFrame();
-
-        renderer2D.clear();
-        DrawEditorUI(sceneState, editorState, renderer2D.getSceneRenderTarget());
-
-        ImGui::Render();
-        ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), renderer2D.getRenderer());
-        renderer2D.present();
+        imguiLayer.EndFrame();
+        windowManager.OnUpdate();
     }
 }
 
@@ -365,11 +372,9 @@ void Engine::shutdown() {
         editorState.assetRegistry.saveManifest(editorState.assetManifestPath);
     }
 
-    ImGui_ImplSDLRenderer3_Shutdown();
-    ImGui_ImplSDL3_Shutdown();
-    ImGui::DestroyContext();
-
+    imguiLayer.Shutdown();
+    Renderer::Shutdown();
     resourceManager.destroy();
     renderer2D.destroy();
-    windowManager.destroy();
+    windowManager.Shutdown();
 }

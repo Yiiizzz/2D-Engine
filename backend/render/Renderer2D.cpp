@@ -1,120 +1,70 @@
 #include "Renderer2D.h"
-#include <iostream>
 
-Renderer2D::Renderer2D()
-    : renderer(nullptr), sceneRenderTarget(nullptr), sceneRenderTargetWidth(0), sceneRenderTargetHeight(0) {}
+#include "Buffer.h"
+#include "Material.h"
+#include "OrthographicCamera.h"
+#include "Renderer.h"
+#include "ShaderLibrary.h"
+#include "VertexArray.h"
 
-bool Renderer2D::init(SDL_Window* window) {
-    renderer = SDL_CreateRenderer(window, nullptr);
-    if (!renderer) {
-        std::cerr << "SDL_CreateRenderer failed: " << SDL_GetError() << std::endl;
-        return false;
-    }
+namespace {
+struct Renderer2DData {
+    Ref<VertexArray> QuadVertexArray;
+    Ref<VertexBuffer> QuadVertexBuffer;
+    Ref<IndexBuffer> QuadIndexBuffer;
+    Ref<Material> QuadMaterial;
+};
 
-    int windowWidth = 0;
-    int windowHeight = 0;
-    SDL_GetWindowSize(window, &windowWidth, &windowHeight);
-
-    if (!resizeSceneRenderTarget(windowWidth, windowHeight)) {
-        return false;
-    }
-
-    return true;
+Renderer2DData s_Data;
 }
 
-void Renderer2D::clear() {
-    SDL_SetRenderTarget(renderer, nullptr);
-    SDL_RenderClear(renderer);
+void Renderer2D::Init(const Ref<ShaderLibrary>& shaderLibrary, const std::string& shaderName) {
+    const float vertices[] = {
+        -0.5f, -0.5f, 0.0f,
+         0.5f, -0.5f, 0.0f,
+         0.5f,  0.5f, 0.0f,
+        -0.5f,  0.5f, 0.0f
+    };
+
+    const unsigned int indices[] = { 0, 1, 2, 2, 3, 0 };
+
+    s_Data.QuadVertexArray = VertexArray::Create();
+    s_Data.QuadVertexBuffer = VertexBuffer::Create(vertices, sizeof(vertices));
+    s_Data.QuadVertexBuffer->SetLayout({
+        { ShaderDataType::Float3, "a_Position" }
+    });
+    s_Data.QuadIndexBuffer = IndexBuffer::Create(indices, 6);
+
+    s_Data.QuadVertexArray->AddVertexBuffer(s_Data.QuadVertexBuffer);
+    s_Data.QuadVertexArray->SetIndexBuffer(s_Data.QuadIndexBuffer);
+
+    s_Data.QuadMaterial = CreateRef<Material>(shaderLibrary->Get(shaderName));
+    s_Data.QuadMaterial->SetFloat4("u_Color", { 1.0f, 1.0f, 1.0f, 1.0f });
 }
 
-void Renderer2D::drawTexture(SDL_Texture* texture) {
-    SDL_RenderTexture(renderer, texture, nullptr, nullptr);
+void Renderer2D::Shutdown() {
+    s_Data.QuadMaterial.reset();
+    s_Data.QuadIndexBuffer.reset();
+    s_Data.QuadVertexBuffer.reset();
+    s_Data.QuadVertexArray.reset();
 }
 
-bool Renderer2D::resizeSceneRenderTarget(int width, int height) {
-    width = (width > 0) ? width : 1;
-    height = (height > 0) ? height : 1;
-
-    if (sceneRenderTarget &&
-        sceneRenderTargetWidth == width &&
-        sceneRenderTargetHeight == height) {
-        return true;
-    }
-
-    if (sceneRenderTarget) {
-        SDL_DestroyTexture(sceneRenderTarget);
-        sceneRenderTarget = nullptr;
-    }
-
-    sceneRenderTarget = SDL_CreateTexture(
-        renderer,
-        SDL_PIXELFORMAT_RGBA8888,
-        SDL_TEXTUREACCESS_TARGET,
-        width,
-        height
-    );
-
-    if (!sceneRenderTarget) {
-        std::cerr << "SDL_CreateTexture (scene render target) failed: "
-            << SDL_GetError() << std::endl;
-        sceneRenderTargetWidth = 0;
-        sceneRenderTargetHeight = 0;
-        return false;
-    }
-
-    sceneRenderTargetWidth = width;
-    sceneRenderTargetHeight = height;
-    SDL_SetTextureScaleMode(sceneRenderTarget, SDL_SCALEMODE_LINEAR);
-    return true;
+void Renderer2D::BeginScene(const OrthographicCamera& camera) {
+    Renderer::BeginScene(camera);
 }
 
-void Renderer2D::renderScene(const SceneState& sceneState, const EditorState& editorState, ResourceManager& resourceManager) {
-    if (!sceneRenderTarget) {
-        return;
-    }
-
-    SDL_SetRenderTarget(renderer, sceneRenderTarget);
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-    SDL_RenderClear(renderer);
-
-    for (const auto& obj : sceneState.objects) {
-        SDL_Texture* texture = resourceManager.getTexture(obj.texturePath, renderer);
-        if (!texture) continue;
-
-        SDL_FRect dst;
-        dst.x = obj.position[0] * editorState.sceneViewZoom + editorState.sceneViewOffsetX;
-        dst.y = obj.position[1] * editorState.sceneViewZoom + editorState.sceneViewOffsetY;
-        dst.w = 64.0f * obj.scale[0] * editorState.sceneViewZoom;
-        dst.h = 64.0f * obj.scale[1] * editorState.sceneViewZoom;
-
-        SDL_RenderTextureRotated(renderer, texture, nullptr, &dst, static_cast<double>(obj.rotation), nullptr, SDL_FLIP_NONE);
-    }
-
-    SDL_SetRenderTarget(renderer, nullptr);
+void Renderer2D::EndScene() {
+    Renderer::EndScene();
 }
 
-SDL_Texture* Renderer2D::getSceneRenderTarget() const {
-    return sceneRenderTarget;
+void Renderer2D::DrawQuad(const Transform& transform, const Vector4& color) {
+    s_Data.QuadMaterial->SetFloat4("u_Color", color);
+    Renderer::Submit(s_Data.QuadMaterial, s_Data.QuadVertexArray, transform);
 }
 
-void Renderer2D::present() {
-    SDL_RenderPresent(renderer);
-}
-
-void Renderer2D::destroy() {
-    if (sceneRenderTarget) {
-        SDL_DestroyTexture(sceneRenderTarget);
-        sceneRenderTarget = nullptr;
-        sceneRenderTargetWidth = 0;
-        sceneRenderTargetHeight = 0;
-    }
-
-    if (renderer) {
-        SDL_DestroyRenderer(renderer);
-        renderer = nullptr;
-    }
-}
-
-SDL_Renderer* Renderer2D::getRenderer() const {
-    return renderer;
+void Renderer2D::DrawQuad(const Vector3& position, const Vector3& size, const Vector4& color) {
+    Transform transform;
+    transform.Translation = position;
+    transform.Scale = size;
+    DrawQuad(transform, color);
 }

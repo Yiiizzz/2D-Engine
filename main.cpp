@@ -1,13 +1,12 @@
-#include "backend/core/Engine.h"
-#include "frontend/src/editor/EditorUI.h"
+#include "backend/core/Application.h"
 
 int main() {
-    Engine engine;
-    if (!engine.init()) {
+    Application application;
+    if (!application.Init()) {
         return 1;
     }
 
-    engine.run();
-    engine.shutdown();
+    application.Run();
+    application.Shutdown();
     return 0;
 }

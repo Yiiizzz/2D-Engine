@@ -1,25 +1,19 @@
 #pragma once
-#include <SDL3/SDL.h>
-#include "../core/SceneState.h"
-#include "../resource/ResourceManager.h"
-#include "../../frontend/src/EditorState.h"
+
+#include <string>
+
+#include "../core/Ref.h"
+#include "Math.h"
+
+class OrthographicCamera;
+class ShaderLibrary;
 
 class Renderer2D {
-private:
-    SDL_Renderer* renderer;
-    SDL_Texture* sceneRenderTarget;
-    int sceneRenderTargetWidth;
-    int sceneRenderTargetHeight;
-
 public:
-    Renderer2D();
-    bool init(SDL_Window* window);
-    void clear();
-    void drawTexture(SDL_Texture* texture);
-    bool resizeSceneRenderTarget(int width, int height);
-    void renderScene(const SceneState& sceneState, const EditorState& editorState, ResourceManager& resourceManager);
-    SDL_Texture* getSceneRenderTarget() const;
-    void present();
-    void destroy();
-    SDL_Renderer* getRenderer() const;
+    static void Init(const Ref<ShaderLibrary>& shaderLibrary, const std::string& shaderName = "Renderer2D_Quad");
+    static void Shutdown();
+    static void BeginScene(const OrthographicCamera& camera);
+    static void EndScene();
+    static void DrawQuad(const Transform& transform, const Vector4& color);
+    static void DrawQuad(const Vector3& position, const Vector3& size, const Vector4& color);
 };

@@ -277,7 +277,7 @@ void DrawToolbarContent(EditorState& editorState)
     }
 }
 
-void DrawEditorUI(SceneState& sceneState, EditorState& editorState, SDL_Texture* sceneTexture)
+void DrawEditorUI(SceneState& sceneState, EditorState& editorState, const SceneViewportImage& sceneImage)
 {
     static bool dockspaceOpen = true;
     static bool layout_initialized = false;
@@ -362,7 +362,7 @@ void DrawEditorUI(SceneState& sceneState, EditorState& editorState, SDL_Texture*
     ImGui::PopStyleVar(2);
 
     if (editorState.showHierarchy) DrawHierarchyPanel(sceneState, editorState);
-    if (editorState.showScene) DrawScenePanel(sceneState, editorState, sceneTexture);
+    if (editorState.showScene) DrawScenePanel(sceneState, editorState, sceneImage);
     if (editorState.showInspector) DrawInspectorPanel(sceneState, editorState);
     if (editorState.showProject) DrawAssetPanel(sceneState, editorState);
     if (editorState.showConsole) DrawConsolePanel(editorState);

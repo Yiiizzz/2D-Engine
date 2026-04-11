@@ -2,7 +2,9 @@
 
 #include "ResourcePathUtils.h"
 
+#include <SDL3/SDL.h>
 #include <SDL3_image/SDL_image.h>
+#include <glad/glad.h>
 
 #include <algorithm>
 #include <filesystem>
@@ -18,14 +20,6 @@ ResourceManager::ResourceManager() {
 
 ResourceManager::~ResourceManager() {
     releaseAllTextures();
-}
-
-void ResourceManager::setRenderer(SDL_Renderer* renderer) {
-    renderer_ = renderer;
-}
-
-SDL_Renderer* ResourceManager::getRenderer() const {
-    return renderer_;
 }
 
 void ResourceManager::addSearchPath(const std::string& path) {
@@ -59,21 +53,12 @@ const std::vector<std::string>& ResourceManager::getSearchPaths() const {
     return searchPaths_;
 }
 
-SDL_Texture* ResourceManager::loadTexture(const std::string& identifier) {
+const TextureResourceInfo* ResourceManager::loadTexture(const std::string& identifier) {
     return loadTextureInternal(identifier);
 }
 
-SDL_Texture* ResourceManager::getTexture(const std::string& identifier, SDL_Renderer* renderer) {
-    if (renderer != nullptr) {
-        setRenderer(renderer);
-    }
-
+const TextureResourceInfo* ResourceManager::getTexture(const std::string& identifier) {
     return loadTextureInternal(identifier);
-}
-
-SDL_Texture* ResourceManager::findTexture(const std::string& identifier) const {
-    const TextureResourceInfo* info = findTextureInfo(identifier);
-    return info ? info->texture : nullptr;
 }
 
 const TextureResourceInfo* ResourceManager::findTextureInfo(const std::string& identifier) const {
@@ -87,7 +72,7 @@ const TextureResourceInfo* ResourceManager::findTextureInfo(const std::string& i
         return nullptr;
     }
 
-    tempTextureInfo_.texture = it->second.texture;
+    tempTextureInfo_.rendererId = it->second.rendererId;
     tempTextureInfo_.resolvedPath = it->second.resolvedPath;
     tempTextureInfo_.width = it->second.width;
     tempTextureInfo_.height = it->second.height;
@@ -95,7 +80,7 @@ const TextureResourceInfo* ResourceManager::findTextureInfo(const std::string& i
 }
 
 bool ResourceManager::hasTexture(const std::string& identifier) const {
-    return findTexture(identifier) != nullptr;
+    return findTextureInfo(identifier) != nullptr;
 }
 
 std::string ResourceManager::resolveTexturePath(const std::string& identifier) const {
@@ -144,9 +129,9 @@ bool ResourceManager::releaseTexture(const std::string& identifier) {
 
 void ResourceManager::releaseAllTextures() {
     for (auto& [_, record] : textures_) {
-        if (record.texture != nullptr) {
-            SDL_DestroyTexture(record.texture);
-            record.texture = nullptr;
+        if (record.rendererId != 0) {
+            glDeleteTextures(1, &record.rendererId);
+            record.rendererId = 0;
         }
     }
 
@@ -166,18 +151,13 @@ const std::string& ResourceManager::getLastError() const {
     return lastError_;
 }
 
-SDL_Texture* ResourceManager::loadTextureInternal(const std::string& identifier) {
+const TextureResourceInfo* ResourceManager::loadTextureInternal(const std::string& identifier) {
     if (identifier.empty()) {
         setLastError("Texture identifier is empty.");
         return nullptr;
     }
 
-    if (renderer_ == nullptr) {
-        setLastError("Renderer is not set for ResourceManager.");
-        return nullptr;
-    }
-
-    if (SDL_Texture* cached = findTexture(identifier); cached != nullptr) {
+    if (const TextureResourceInfo* cached = findTextureInfo(identifier); cached != nullptr) {
         lastError_.clear();
         return cached;
     }
@@ -194,29 +174,39 @@ SDL_Texture* ResourceManager::loadTextureInternal(const std::string& identifier)
         return nullptr;
     }
 
-    SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer_, surface);
-    if (texture == nullptr) {
-        const std::string message =
-            std::string("SDL_CreateTextureFromSurface failed for '") + resolvedPath + "': " +
-            SDL_GetError();
-        SDL_DestroySurface(surface);
-        setLastError(message);
+    SDL_Surface* rgbaSurface = SDL_ConvertSurface(surface, SDL_PIXELFORMAT_RGBA32);
+    SDL_DestroySurface(surface);
+    if (rgbaSurface == nullptr) {
+        setLastError(std::string("SDL_ConvertSurface failed for '") + resolvedPath + "': " + SDL_GetError());
         return nullptr;
     }
 
-    TextureRecord record;
-    record.texture = texture;
-    record.resolvedPath = resolvedPath;
-    record.width = surface->w;
-    record.height = surface->h;
+    const int width = rgbaSurface->w;
+    const int height = rgbaSurface->h;
 
-    SDL_DestroySurface(surface);
+    unsigned int texture = 0;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgbaSurface->pixels);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    SDL_DestroySurface(rgbaSurface);
+
+    TextureRecord record;
+    record.rendererId = texture;
+    record.resolvedPath = resolvedPath;
+    record.width = width;
+    record.height = height;
 
     textures_[resolvedPath] = std::move(record);
     registerAlias(identifier, resolvedPath);
     registerAlias(resolvedPath, resolvedPath);
     lastError_.clear();
-    return textures_[resolvedPath].texture;
+    return findTextureInfo(identifier);
 }
 
 void ResourceManager::registerAlias(const std::string& alias, const std::string& resolvedPath) {
@@ -252,8 +242,8 @@ void ResourceManager::destroyRecord(const std::string& resolvedPath) {
         aliasToResolvedPath_.erase(alias);
     }
 
-    if (it->second.texture != nullptr) {
-        SDL_DestroyTexture(it->second.texture);
+    if (it->second.rendererId != 0) {
+        glDeleteTextures(1, &it->second.rendererId);
     }
 
     textures_.erase(it);
@@ -261,7 +251,6 @@ void ResourceManager::destroyRecord(const std::string& resolvedPath) {
 
 void ResourceManager::setLastError(std::string message) {
     lastError_ = std::move(message);
-    SDL_Log("ResourceManager: %s", lastError_.c_str());
 }
 
 void ResourceManager::clearPathCache() {

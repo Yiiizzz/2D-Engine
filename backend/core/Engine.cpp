@@ -9,22 +9,10 @@
 #include <GLFW/glfw3.h>
 #include <imgui.h>
 
-#include <algorithm>
 #include <chrono>
 #include <filesystem>
 
 namespace fs = std::filesystem;
-
-namespace {
-
-constexpr float kSceneObjectBaseSize = 64.0f;
-constexpr float kDefaultSceneFrameWidth = 480.0f;
-constexpr float kDefaultSceneFrameHeight = 270.0f;
-constexpr float kSceneFramePaddingPixels = 48.0f;
-constexpr float kMinSceneViewZoom = 0.35f;
-constexpr float kMaxSceneViewZoom = 6.0f;
-
-}
 
 Engine::Engine() : running(false) {}
 
@@ -42,7 +30,7 @@ bool Engine::init() {
     }
 
     Renderer::Init(windowManager.GetGraphicsAPI());
-    Renderer::OnWindowResize(windowManager.GetWidth(), windowManager.GetHeight());
+    Renderer::OnWindowResize(windowManager.GetFramebufferWidth(), windowManager.GetFramebufferHeight());
 
     if (!renderer2D.init(windowManager.GetNativeWindow())) {
         return false;
@@ -58,25 +46,38 @@ bool Engine::init() {
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
+    imguiLayer.SetExternalScrollCallback([this](float, float yOffset) {
+        if (!editorState.showScene) {
+            return;
+        }
+
+        const ImVec2 mousePos = ImGui::GetIO().MousePos;
+        const bool insideViewport =
+            mousePos.x >= editorState.sceneViewportScreenX &&
+            mousePos.y >= editorState.sceneViewportScreenY &&
+            mousePos.x <= editorState.sceneViewportScreenX + editorState.sceneViewportScreenWidth &&
+            mousePos.y <= editorState.sceneViewportScreenY + editorState.sceneViewportScreenHeight;
+
+        if (insideViewport) {
+            renderer2D.OnMouseScrolled(0.0f, yOffset);
+        }
+    });
+
     const AssetRecord* defaultTexture = editorState.assetRegistry.findByPath("pillar.png");
     const std::uint64_t defaultTextureId = defaultTexture ? defaultTexture->id : 0;
     const std::string defaultTexturePath =
         defaultTexture && !defaultTexture->relativePath.empty() ? defaultTexture->relativePath : "pillar.png";
-    int windowWidth = 0;
-    int windowHeight = 0;
-    SDL_GetWindowSize(windowManager.getWindow(), &windowWidth, &windowHeight);
-    editorState.sceneViewportWidth = static_cast<float>(std::max(windowWidth, 1));
-    editorState.sceneViewportHeight = static_cast<float>(std::max(windowHeight, 1));
+    editorState.sceneViewportWidth = static_cast<float>(windowManager.GetFramebufferWidth());
+    editorState.sceneViewportHeight = static_cast<float>(windowManager.GetFramebufferHeight());
     sceneState.objects.push_back({ 0, "Player", {100.0f, 100.0f}, {1.0f, 1.0f}, 0.0f, defaultTextureId, defaultTexturePath, 0, "" });
     sceneState.objects.push_back({ 1, "Enemy", {300.0f, 200.0f}, {1.0f, 1.0f}, 0.0f, defaultTextureId, defaultTexturePath, 0, "" });
     editorState.selectedObjectIndex = 0;
-    frameSceneView();
-    refreshSceneViewTransform();
     editorState.assetStatus = "Create or open a project to import and persist project assets";
     editorState.sceneFilePath.clear();
     AddEditorLog(editorState, EditorLogLevel::Info, "Engine initialized.");
 
     running = true;
+    lastFrameTime = std::chrono::steady_clock::now();
     return true;
 }
 
@@ -127,51 +128,6 @@ void Engine::configureResourceSearchPaths() {
     }
 }
 
-void Engine::frameSceneView() {
-    const float viewportWidth = std::max(editorState.sceneViewportWidth, 1.0f);
-    const float viewportHeight = std::max(editorState.sceneViewportHeight, 1.0f);
-    const float usableWidth = std::max(viewportWidth - kSceneFramePaddingPixels * 2.0f, viewportWidth * 0.5f);
-    const float usableHeight = std::max(viewportHeight - kSceneFramePaddingPixels * 2.0f, viewportHeight * 0.5f);
-
-    float minX = 0.0f;
-    float minY = 0.0f;
-    float maxX = kDefaultSceneFrameWidth;
-    float maxY = kDefaultSceneFrameHeight;
-
-    if (!sceneState.objects.empty()) {
-        minX = sceneState.objects.front().position[0];
-        minY = sceneState.objects.front().position[1];
-        maxX = sceneState.objects.front().position[0] + kSceneObjectBaseSize * std::max(sceneState.objects.front().scale[0], 0.0f);
-        maxY = sceneState.objects.front().position[1] + kSceneObjectBaseSize * std::max(sceneState.objects.front().scale[1], 0.0f);
-
-        for (const GameObject& object : sceneState.objects) {
-            const float objectWidth = kSceneObjectBaseSize * std::max(object.scale[0], 0.0f);
-            const float objectHeight = kSceneObjectBaseSize * std::max(object.scale[1], 0.0f);
-            minX = std::min(minX, object.position[0]);
-            minY = std::min(minY, object.position[1]);
-            maxX = std::max(maxX, object.position[0] + objectWidth);
-            maxY = std::max(maxY, object.position[1] + objectHeight);
-        }
-    }
-
-    const float sceneCenterX = (minX + maxX) * 0.5f;
-    const float sceneCenterY = (minY + maxY) * 0.5f;
-    const float framedWorldWidth = std::max(maxX - minX, kDefaultSceneFrameWidth);
-    const float framedWorldHeight = std::max(maxY - minY, kDefaultSceneFrameHeight);
-    const float rawZoom = std::min(usableWidth / framedWorldWidth, usableHeight / framedWorldHeight);
-
-    editorState.sceneViewZoom = std::clamp(rawZoom, kMinSceneViewZoom, kMaxSceneViewZoom);
-    editorState.sceneViewCenterX = sceneCenterX;
-    editorState.sceneViewCenterY = sceneCenterY;
-}
-
-void Engine::refreshSceneViewTransform() {
-    const float viewportWidth = std::max(editorState.sceneViewportWidth, 1.0f);
-    const float viewportHeight = std::max(editorState.sceneViewportHeight, 1.0f);
-    editorState.sceneViewOffsetX = viewportWidth * 0.5f - editorState.sceneViewCenterX * editorState.sceneViewZoom;
-    editorState.sceneViewOffsetY = viewportHeight * 0.5f - editorState.sceneViewCenterY * editorState.sceneViewZoom;
-}
-
 bool Engine::openProject(const ProjectDescriptor& project) {
     editorState.projectName = project.name;
     editorState.projectRootPath = project.rootPath;
@@ -203,8 +159,6 @@ bool Engine::openProject(const ProjectDescriptor& project) {
         editorState.projectStatus = "Created project: " + project.name;
     }
 
-    frameSceneView();
-    refreshSceneViewTransform();
     editorState.assetStatus = editorState.assetRegistry.getAssetCount() > 0
         ? "Project assets loaded"
         : "Project opened with no imported assets yet";
@@ -339,6 +293,11 @@ void Engine::handleProjectCommands() {
 
 void Engine::run() {
     while (running) {
+        const auto frameStart = std::chrono::steady_clock::now();
+        const std::chrono::duration<float> frameDuration = frameStart - lastFrameTime;
+        lastFrameTime = frameStart;
+        const float deltaSeconds = frameDuration.count();
+
         windowManager.PollEvents();
         inputManager.processEvents(windowManager, sceneState, editorState);
         if (inputManager.shouldQuit()) {
@@ -352,7 +311,7 @@ void Engine::run() {
             static_cast<int>(editorState.sceneViewportWidth),
             static_cast<int>(editorState.sceneViewportHeight)
         );
-        renderer2D.renderScene(sceneState, resourceManager);
+        renderer2D.renderScene(sceneState, resourceManager, deltaSeconds);
         DrawEditorUI(sceneState, editorState, renderer2D.getSceneViewportImage());
 
         handleEditorCommands();
@@ -360,7 +319,6 @@ void Engine::run() {
         syncProjectAssets();
 
         gameLoop.update(sceneState, editorState);
-        refreshSceneViewTransform();
 
         imguiLayer.EndFrame();
         windowManager.OnUpdate();

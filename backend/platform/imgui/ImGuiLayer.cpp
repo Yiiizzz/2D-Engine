@@ -156,6 +156,10 @@ bool ImGuiLayer::Init(GLFWwindow* window) {
     return CreateDeviceObjects();
 }
 
+void ImGuiLayer::SetExternalScrollCallback(std::function<void(float, float)> callback) {
+    m_ExternalScrollCallback = std::move(callback);
+}
+
 void ImGuiLayer::Shutdown() {
     DestroyDeviceObjects();
 
@@ -478,6 +482,11 @@ void ImGuiLayer::MouseButtonCallback(GLFWwindow* window, int button, int action,
 void ImGuiLayer::ScrollCallback(GLFWwindow* window, double xOffset, double yOffset) {
     ImGuiIO& io = ImGui::GetIO();
     io.AddMouseWheelEvent(static_cast<float>(xOffset), static_cast<float>(yOffset));
+    if (ImGuiLayer* layer = g_ActiveImGuiLayer) {
+        if (layer->m_ExternalScrollCallback) {
+            layer->m_ExternalScrollCallback(static_cast<float>(xOffset), static_cast<float>(yOffset));
+        }
+    }
 }
 
 void ImGuiLayer::KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {

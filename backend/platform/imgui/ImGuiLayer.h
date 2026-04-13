@@ -1,5 +1,7 @@
 #pragma once
 
+ #include <functional>
+
 struct GLFWwindow;
 
 class ImGuiLayer {
@@ -8,6 +10,7 @@ public:
     void Shutdown();
     void BeginFrame();
     void EndFrame();
+    void SetExternalScrollCallback(std::function<void(float, float)> callback);
 
 private:
     bool CreateDeviceObjects();
@@ -39,4 +42,5 @@ private:
     unsigned int m_VboHandle = 0;
     unsigned int m_ElementsHandle = 0;
     unsigned int m_VaoHandle = 0;
+    std::function<void(float, float)> m_ExternalScrollCallback;
 };

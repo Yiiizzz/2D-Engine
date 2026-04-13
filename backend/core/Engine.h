@@ -23,6 +23,7 @@ private:
     SceneState playModeSceneBackup;
     bool hasPlayModeBackup = false;
     unsigned long long lastProjectSyncTick = 0;
+    std::chrono::steady_clock::time_point lastFrameTime{};
 
 public:
     Engine();
@@ -33,8 +34,6 @@ public:
     void handleProjectCommands();
     bool openProject(const ProjectDescriptor& project);
     void configureResourceSearchPaths();
-    void frameSceneView();
-    void refreshSceneViewTransform();
     void syncProjectAssets(bool force = false);
     void clearMissingAssetReferences(const std::vector<AssetRecord>& removedAssets);
 };

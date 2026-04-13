@@ -15,6 +15,14 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(OpenGL REQUIRED)
 
+if (EXISTS "${CMAKE_SOURCE_DIR}/external/SDL/CMakeLists.txt")
+    add_subdirectory(external/SDL)
+endif()
+
+if (EXISTS "${CMAKE_SOURCE_DIR}/external/SDL_image/CMakeLists.txt")
+    add_subdirectory(external/SDL_image)
+endif()
+
 if (EXISTS "${CMAKE_SOURCE_DIR}/external/glfw/CMakeLists.txt")
     add_subdirectory(external/glfw)
 endif()
@@ -58,9 +66,10 @@ endif()
 
 add_executable(LancelotEngine
     main.cpp
-    app/OrthographicCameraController.cpp
-    backend/core/Application.cpp
+    backend/core/Engine.cpp
+    backend/core/GameLoop.cpp
     backend/window/WindowManager.cpp
+    backend/input/InputManager.cpp
     backend/render/GraphicsContext.cpp
     backend/render/RendererAPI.cpp
     backend/render/RenderCommand.cpp
@@ -73,21 +82,44 @@ add_executable(LancelotEngine
     backend/render/Buffer.cpp
     backend/render/VertexArray.cpp
     backend/render/Shader.cpp
+    backend/platform/imgui/ImGuiLayer.cpp
     backend/platform/opengl/OpenGLContext.cpp
     backend/platform/opengl/OpenGLRendererAPI.cpp
     backend/platform/opengl/OpenGLBuffer.cpp
     backend/platform/opengl/OpenGLVertexArray.cpp
     backend/platform/opengl/OpenGLShader.cpp
     backend/platform/opengl/OpenGLTexture.cpp
+    backend/resource/AssetRegistry.cpp
+    backend/resource/ResourceManager.cpp
+    backend/resource/ResourcePathUtils.cpp
+    backend/project/ProjectManager.cpp
+    backend/script/ScriptRuntime.cpp
+    backend/SceneSerializer.cpp
+    frontend/src/editor/EditorUI.cpp
+    frontend/src/editor/Panels/AssetPanel.cpp
+    frontend/src/editor/Panels/ConsolePanel.cpp
+    frontend/src/editor/Panels/HierarchyPanel.cpp
+    frontend/src/editor/Panels/InspectorPanel.cpp
+    frontend/src/editor/Panels/ScenePanel.cpp
+    external/imgui/imgui.cpp
+    external/imgui/imgui_draw.cpp
+    external/imgui/imgui_tables.cpp
+    external/imgui/imgui_widgets.cpp
 )
 
 target_include_directories(LancelotEngine PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/backend
     ${CMAKE_SOURCE_DIR}/external
+    ${CMAKE_SOURCE_DIR}/external/imgui
+    ${CMAKE_SOURCE_DIR}/external/SDL/include
+    ${CMAKE_SOURCE_DIR}/external/SDL_image/include
+    ${CMAKE_SOURCE_DIR}/external/json-develop/single_include
 )
 
 target_link_libraries(LancelotEngine PRIVATE
+    SDL3::SDL3
+    SDL3_image::SDL3_image
     ${LANCELOT_GLFW_TARGET}
     ${LANCELOT_GLAD_TARGET}
     OpenGL::GL
